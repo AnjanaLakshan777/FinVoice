@@ -1,0 +1,25 @@
+{
+  "name": "@finvoice/shared",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Framework-agnostic types and utilities shared across FinVoice applications.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "pnpm run clean && tsc --project tsconfig.build.json",
+    "clean": "node --eval \"fs.rmSync('dist', { recursive: true, force: true })\"",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "typescript": "6.0.3"
+  }
+}

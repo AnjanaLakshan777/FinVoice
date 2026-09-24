@@ -1,0 +1,25 @@
+{
+  "name": "@finvoice/voice-gateway",
+  "version": "0.0.0",
+  "private": true,
+  "description": "FinVoice real-time voice gateway service (Node.js).",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm run clean && tsc --project tsconfig.build.json",
+    "clean": "node --eval \"fs.rmSync('dist', { recursive: true, force: true })\"",
+    "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
+    "start": "node --enable-source-maps dist/main.js",
+    "typecheck": "tsc --project tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@finvoice/config": "workspace:*",
+    "@finvoice/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "vitest": "5.0.1"
+  }
+}

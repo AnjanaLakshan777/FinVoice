@@ -1,0 +1,13 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Refuse to install on an unsupported Node.js version (see "engines" in package.json).
+engineStrict: true
+
+# Dependency install scripts are blocked unless explicitly allowed here.
+# Both packages below ship prebuilt platform binaries as optional dependencies,
+# so their postinstall scripts are not needed.
+allowBuilds:
+  esbuild: false
+  unrs-resolver: false

@@ -1,0 +1,31 @@
+{
+  "name": "@finvoice/api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "FinVoice backend API (NestJS).",
+  "type": "module",
+  "scripts": {
+    "build": "nest build",
+    "clean": "node --eval \"fs.rmSync('dist', { recursive: true, force: true })\"",
+    "dev": "nest start --watch --exec \"node --env-file-if-exists=../../.env --enable-source-maps\"",
+    "start": "node --enable-source-maps dist/main.js",
+    "typecheck": "tsc --project tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@finvoice/config": "workspace:*",
+    "@finvoice/shared": "workspace:*",
+    "@nestjs/common": "12.1.0",
+    "@nestjs/core": "12.1.0",
+    "@nestjs/platform-express": "12.1.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "12.0.5",
+    "@nestjs/testing": "12.1.0",
+    "@types/node": "24.13.6",
+    "typescript": "6.0.3",
+    "vitest": "5.0.1"
+  }
+}

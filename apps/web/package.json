@@ -1,0 +1,25 @@
+{
+  "name": "@finvoice/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "FinVoice web application (Next.js).",
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "clean": "node --eval \"fs.rmSync('.next', { recursive: true, force: true })\"",
+    "dev": "next dev --port 3000",
+    "start": "next start --port 3000",
+    "typecheck": "next typegen && tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "next": "16.3.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "6.0.3"
+  }
+}
