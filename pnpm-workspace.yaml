@@ -6,8 +6,15 @@ packages:
 engineStrict: true
 
 # Dependency install scripts are blocked unless explicitly allowed here.
-# Both packages below ship prebuilt platform binaries as optional dependencies,
-# so their postinstall scripts are not needed.
 allowBuilds:
+  # Downloads Prisma's schema engine binary, required by `prisma migrate`.
+  "@prisma/engines": true
+  # Not needed: prebuilt platform binaries are installed as optional dependencies.
   esbuild: false
   unrs-resolver: false
+  # Not needed: environment/version notices only.
+  prisma: false
+  protobufjs: false
+  # Not needed: optional native crypto for Docker-over-SSH (testcontainers uses the local socket).
+  ssh2: false
+  cpu-features: false

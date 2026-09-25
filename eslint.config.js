@@ -7,7 +7,14 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default defineConfig([
-  globalIgnores(["**/node_modules/", "**/dist/", "**/.next/", "**/coverage/", "**/next-env.d.ts"]),
+  globalIgnores([
+    "**/node_modules/",
+    "**/dist/",
+    "**/.next/",
+    "**/coverage/",
+    "**/next-env.d.ts",
+    "apps/api/src/generated/",
+  ]),
 
   eslint.configs.recommended,
   tseslint.configs.strictTypeChecked,

@@ -1,6 +1,6 @@
 # FinVoice system overview
 
-> **Status:** Step 1 (project foundation). Only the repository structure, service skeletons and health endpoints exist. Everything else in this document describes the **intended** architecture and will be built in later steps.
+> **Status:** Step 2 (database foundation). The repository structure, service skeletons, health endpoints and the first database tables exist. Everything else in this document describes the **intended** architecture and will be built in later steps. The database design is documented in [database.md](database.md).
 
 ## Purpose
 
@@ -75,7 +75,7 @@ Browser-based voice conversations will also need a real-time audio connection to
 | Path                 | Component                                                | Step 1 state                  |
 | -------------------- | -------------------------------------------------------- | ----------------------------- |
 | `apps/web`           | Web application (Next.js)                                | Placeholder homepage          |
-| `apps/api`           | Backend API (NestJS)                                     | `GET /health`                 |
+| `apps/api`           | Backend API (NestJS)                                     | Health + database module      |
 | `apps/voice-gateway` | Voice gateway (Node.js)                                  | `GET /health` only            |
 | `packages/shared`    | Framework-agnostic shared types and utilities            | `ServiceHealth` type          |
 | `packages/contracts` | API and tool contracts                                   | Empty, conventions documented |
@@ -85,4 +85,4 @@ Browser-based voice conversations will also need a real-time audio connection to
 
 ## Not yet built
 
-In later steps: Asterisk and SIP configuration, the AudioSocket server, Gemini Live integration, tool definitions, financial knowledge and calculations, scam detection, authentication, database schema and migrations, and deployment.
+In later steps: Asterisk and SIP configuration, the AudioSocket server, Gemini Live integration, tool definitions, financial knowledge and calculations, scam detection, authentication, business APIs over the database, and deployment.

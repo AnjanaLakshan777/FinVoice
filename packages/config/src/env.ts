@@ -34,3 +34,13 @@ export type NodeEnv = z.output<typeof nodeEnvSchema>;
 export const hostSchema = z.string().trim().min(1);
 
 export const portSchema = z.coerce.number().int().min(1).max(65_535);
+
+/**
+ * A PostgreSQL connection URL. Validation errors never echo the value, because it
+ * contains credentials.
+ */
+export const databaseUrlSchema = z.url({
+  protocol: /^postgres(ql)?$/,
+  error: (issue) =>
+    issue.input === undefined ? "Required" : "Must be a postgresql:// connection URL",
+});

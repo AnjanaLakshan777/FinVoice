@@ -1,1 +1,1 @@
-export type { ServiceHealth } from "./health.js";
+export type { DependencyStatus, ServiceHealth, ServiceReadiness } from "./health.js";

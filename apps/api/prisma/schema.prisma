@@ -1,0 +1,117 @@
+// FinVoice database schema.
+// Design rationale: docs/architecture/database.md
+//
+// Changes to this file must be shipped as a migration (`pnpm db:migrate:dev`).
+// CHECK constraints cannot be expressed in Prisma schema; they live in the migration SQL
+// and are listed next to each model below.
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  runtime                = "nodejs"
+  moduleFormat           = "esm"
+  importFileExtension    = "js"
+  generatedFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Languages FinVoice converses in.
+enum Language {
+  SI // Sinhala
+  TA // Tamil
+  EN // English
+
+  @@map("language")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("user_status")
+}
+
+enum FinancialGoalType {
+  SAVINGS
+  EMERGENCY_FUND
+  DEBT_REPAYMENT
+  OTHER
+
+  @@map("financial_goal_type")
+}
+
+enum FinancialGoalStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+
+  @@map("financial_goal_status")
+}
+
+/// A person using FinVoice, identified by their phone number.
+/// CHECK: phone_number is E.164; display_name, if present, is not blank; timezone is not blank.
+model User {
+  id                String     @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  /// E.164 format, e.g. +94771234567. Unique index also serves phone-number lookups.
+  phoneNumber       String     @unique @map("phone_number") @db.VarChar(16)
+  displayName       String?    @map("display_name") @db.VarChar(100)
+  preferredLanguage Language   @map("preferred_language")
+  /// IANA time zone name.
+  timezone          String     @default("Asia/Colombo") @db.VarChar(64)
+  status            UserStatus @default(ACTIVE)
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  financialProfile FinancialProfile?
+  financialGoals   FinancialGoal[]
+
+  @@map("users")
+}
+
+/// A user's self-reported monthly finances. At most one per user.
+/// CHECK: currency is an ISO 4217 code; monthly amounts are >= 0.
+model FinancialProfile {
+  id              String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId          String   @unique @map("user_id") @db.Uuid
+  /// Null until the user has provided it.
+  monthlyIncome   Decimal? @map("monthly_income") @db.Decimal(14, 2)
+  /// Null until the user has provided it.
+  monthlyExpenses Decimal? @map("monthly_expenses") @db.Decimal(14, 2)
+  /// ISO 4217 code; applies to every amount on this profile.
+  currency        String   @default("LKR") @db.Char(3)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@map("financial_profiles")
+}
+
+/// Something a user is saving towards or paying off.
+/// CHECK: name is not blank; currency is an ISO 4217 code; target_amount > 0;
+///        0 <= current_amount <= target_amount.
+model FinancialGoal {
+  id            String              @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId        String              @map("user_id") @db.Uuid
+  type          FinancialGoalType
+  name          String              @db.VarChar(120)
+  targetAmount  Decimal             @map("target_amount") @db.Decimal(14, 2)
+  currentAmount Decimal             @default(0) @map("current_amount") @db.Decimal(14, 2)
+  /// ISO 4217 code; applies to target_amount and current_amount.
+  currency      String              @default("LKR") @db.Char(3)
+  targetDate    DateTime?           @map("target_date") @db.Date
+  status        FinancialGoalStatus @default(ACTIVE)
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  /// "A user's goals" and "a user's goals with status X, by target date". Also indexes the FK.
+  @@index([userId, status, targetDate])
+  /// "Active goals due before date D" across all users (reminders, follow-ups).
+  @@index([status, targetDate])
+  @@map("financial_goals")
+}

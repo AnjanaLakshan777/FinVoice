@@ -19,12 +19,17 @@
     "lint": "pnpm build:packages && eslint .",
     "lint:fix": "pnpm build:packages && eslint . --fix",
     "test": "pnpm build:packages && pnpm --recursive --if-present test",
+    "test:integration": "pnpm build:packages && pnpm --filter @finvoice/api test:integration",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "clean": "pnpm --recursive run clean",
     "db:up": "docker compose up --detach --wait postgres",
     "db:down": "docker compose down",
-    "db:logs": "docker compose logs --follow postgres"
+    "db:logs": "docker compose logs --follow postgres",
+    "db:migrate": "pnpm --filter @finvoice/api db:migrate",
+    "db:migrate:create": "pnpm --filter @finvoice/api db:migrate:create",
+    "db:migrate:status": "pnpm --filter @finvoice/api db:migrate:status",
+    "db:seed": "pnpm build:packages && pnpm --filter @finvoice/api db:seed"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

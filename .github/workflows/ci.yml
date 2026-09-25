@@ -43,8 +43,11 @@ jobs:
       - name: Type-check
         run: pnpm typecheck
 
-      - name: Test
+      - name: Unit tests
         run: pnpm test
+
+      - name: Database integration tests (disposable PostgreSQL container)
+        run: pnpm test:integration
 
       - name: Build
         run: pnpm build
