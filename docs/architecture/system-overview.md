@@ -1,6 +1,6 @@
 # FinVoice system overview
 
-> **Status:** Step 3 (domain API). The repository structure, service skeletons, health endpoints, the core database tables and a validated REST API for users, financial profiles and goals ([domain-api.md](../api/domain-api.md)) exist. Everything else in this document describes the **intended** architecture and will be built in later steps. The database design is documented in [database.md](database.md).
+> **Status:** Step 4 (financial calculation engine). The repository structure, service skeletons, health endpoints, the core database tables, a validated REST API for users, financial profiles and goals ([domain-api.md](../api/domain-api.md)) and a deterministic calculation engine for loans, savings and budgets ([financial-calculation-engine.md](financial-calculation-engine.md)) exist. Everything else in this document describes the **intended** architecture and will be built in later steps. The database design is documented in [database.md](database.md).
 
 ## Purpose
 
@@ -33,17 +33,17 @@ Backend API            (apps/api)
 PostgreSQL
 ```
 
-| Layer               | Responsibility                                                                                                                                                                                                                                                                                                         |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Caller**          | A user on a mobile or landline phone.                                                                                                                                                                                                                                                                                  |
-| **Telephony / SIP** | A SIP trunk from a telephony provider delivers inbound calls from the public phone network to FinVoice.                                                                                                                                                                                                                |
-| **Asterisk**        | Open-source PBX that terminates the SIP call and handles call control: answering, the dial plan, DTMF, transfers and hang-up. It contains no FinVoice business logic.                                                                                                                                                  |
-| **AudioSocket**     | A simple TCP protocol built into Asterisk. It streams the call's raw audio (typically 16-bit signed linear PCM) in both directions between Asterisk and an external service, one connection per call.                                                                                                                  |
-| **Voice Gateway**   | FinVoice's real-time audio service. It accepts AudioSocket connections, manages the lifecycle of each voice session, converts audio formats and sample rates between telephony and the model, streams audio to and from Gemini Live, handles interruptions (barge-in), and executes the tool calls the model requests. |
-| **Gemini Live**     | Real-time speech model that listens to the caller and replies with generated speech. When it needs facts or must take an action, it requests a **tool call** instead of guessing.                                                                                                                                      |
-| **FinVoice Tools**  | A small, explicitly defined set of functions exposed to the model (for example "look up X" or "explain Y"). Each tool has a typed contract in `packages/contracts`. The voice gateway runs a tool by calling the Backend API; tools never access the database directly.                                                |
-| **Backend API**     | The single owner of business logic, validation, authorization, persistence and auditing. Every channel goes through it.                                                                                                                                                                                                |
-| **PostgreSQL**      | The primary system of record. Only the Backend API connects to it.                                                                                                                                                                                                                                                     |
+| Layer               | Responsibility                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Caller**          | A user on a mobile or landline phone.                                                                                                                                                                                                                                                                                                                                    |
+| **Telephony / SIP** | A SIP trunk from a telephony provider delivers inbound calls from the public phone network to FinVoice.                                                                                                                                                                                                                                                                  |
+| **Asterisk**        | Open-source PBX that terminates the SIP call and handles call control: answering, the dial plan, DTMF, transfers and hang-up. It contains no FinVoice business logic.                                                                                                                                                                                                    |
+| **AudioSocket**     | A simple TCP protocol built into Asterisk. It streams the call's raw audio (typically 16-bit signed linear PCM) in both directions between Asterisk and an external service, one connection per call.                                                                                                                                                                    |
+| **Voice Gateway**   | FinVoice's real-time audio service. It accepts AudioSocket connections, manages the lifecycle of each voice session, converts audio formats and sample rates between telephony and the model, streams audio to and from Gemini Live, handles interruptions (barge-in), and executes the tool calls the model requests.                                                   |
+| **Gemini Live**     | Real-time speech model that listens to the caller and replies with generated speech. When it needs facts or must take an action, it requests a **tool call** instead of guessing.                                                                                                                                                                                        |
+| **FinVoice Tools**  | A small, explicitly defined set of functions exposed to the model (for example "look up X" or "explain Y"). Each tool has a typed contract in `packages/contracts`. The voice gateway runs a tool by calling the Backend API; tools never access the database directly. Financial figures always come from the calculation engine through the API, never from the model. |
+| **Backend API**     | The single owner of business logic, validation, authorization, persistence and auditing. Every channel goes through it.                                                                                                                                                                                                                                                  |
+| **PostgreSQL**      | The primary system of record. Only the Backend API connects to it.                                                                                                                                                                                                                                                                                                       |
 
 ## Web application path
 
@@ -72,17 +72,18 @@ Browser-based voice conversations will also need a real-time audio connection to
 
 ## Repository mapping
 
-| Path                 | Component                                                | Step 1 state                                  |
-| -------------------- | -------------------------------------------------------- | --------------------------------------------- |
-| `apps/web`           | Web application (Next.js)                                | Placeholder homepage                          |
-| `apps/api`           | Backend API (NestJS)                                     | Health + domain API `/api/v1`                 |
-| `apps/voice-gateway` | Voice gateway (Node.js)                                  | `GET /health` only                            |
-| `packages/shared`    | Framework-agnostic shared types and utilities            | `ServiceHealth` type                          |
-| `packages/contracts` | API and tool contracts                                   | Domain API request schemas and response types |
-| `packages/config`    | Environment parsing and validation                       | API and voice gateway loaders                 |
-| `docker-compose.yml` | Local infrastructure                                     | PostgreSQL 18                                 |
-| `infrastructure/`    | Container, database and (later) telephony infrastructure | Placeholders                                  |
+| Path                      | Component                                                | Step 1 state                                  |
+| ------------------------- | -------------------------------------------------------- | --------------------------------------------- |
+| `apps/web`                | Web application (Next.js)                                | Placeholder homepage                          |
+| `apps/api`                | Backend API (NestJS)                                     | Health + domain API `/api/v1`                 |
+| `apps/voice-gateway`      | Voice gateway (Node.js)                                  | `GET /health` only                            |
+| `packages/shared`         | Framework-agnostic shared types and utilities            | `ServiceHealth` type                          |
+| `packages/contracts`      | API and tool contracts                                   | Domain API request schemas and response types |
+| `packages/finance-engine` | Deterministic financial calculations                     | Loan, savings and budget calculators          |
+| `packages/config`         | Environment parsing and validation                       | API and voice gateway loaders                 |
+| `docker-compose.yml`      | Local infrastructure                                     | PostgreSQL 18                                 |
+| `infrastructure/`         | Container, database and (later) telephony infrastructure | Placeholders                                  |
 
 ## Not yet built
 
-In later steps: Asterisk and SIP configuration, the AudioSocket server, Gemini Live integration, tool definitions, financial knowledge and calculations, scam detection, authentication and authorisation, and deployment.
+In later steps: Asterisk and SIP configuration, the AudioSocket server, Gemini Live integration, tool definitions, the financial knowledge base, scam detection, authentication and authorisation, and deployment.

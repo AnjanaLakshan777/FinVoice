@@ -4,16 +4,17 @@ FinVoice is a voice-first financial inclusion and financial literacy platform fo
 
 ## Current status
 
-**Step 3: domain API.** This repository has:
+**Step 4: financial calculation engine.** This repository has:
 
 - a pnpm monorepo with strict TypeScript, ESLint, Prettier, Vitest and CI;
 - a placeholder **web app** (Next.js);
 - a **backend API** (NestJS) with a validated REST API for users, financial profiles and financial goals under `/api/v1`, plus liveness (`GET /health`) and database readiness (`GET /health/ready`) checks;
+- a framework-independent **financial calculation engine** (loan repayment, savings plan, budget summary) with exact decimal arithmetic, exposed under `/api/v1/calculations`;
 - a **PostgreSQL 18** schema managed by **Prisma migrations**, with the first core tables (`users`, `financial_profiles`, `financial_goals`);
 - a **voice gateway** service (Node.js) with `GET /health`;
-- shared `shared`, `contracts` and `config` packages.
+- shared `shared`, `contracts`, `config` and `finance-engine` packages.
 
-There is no authentication yet, and no AI or voice integration, telephony or financial calculations. The target architecture is described in [docs/architecture/system-overview.md](docs/architecture/system-overview.md), the database design in [docs/architecture/database.md](docs/architecture/database.md) and the API in [docs/api/domain-api.md](docs/api/domain-api.md).
+There is no authentication yet, and no AI or voice integration or telephony. The target architecture is described in [docs/architecture/system-overview.md](docs/architecture/system-overview.md), the database design in [docs/architecture/database.md](docs/architecture/database.md), the calculation engine in [docs/architecture/financial-calculation-engine.md](docs/architecture/financial-calculation-engine.md) and the API in [docs/api/domain-api.md](docs/api/domain-api.md).
 
 ## Repository structure
 
@@ -27,6 +28,7 @@ finvoice/
 ├── packages/
 │   ├── shared/           Framework-agnostic shared types (e.g. ServiceHealth)
 │   ├── contracts/        API request schemas and response types (shared by API and clients)
+│   ├── finance-engine/   Deterministic financial calculations (exact decimals, no framework)
 │   └── config/           Validated environment configuration for each service
 ├── infrastructure/
 │   ├── docker/           Container build files (future)
@@ -117,6 +119,14 @@ Invoke-RestMethod -Method Post "$api/users/$($user.id)/goals" -ContentType "appl
 Invoke-RestMethod "$api/users/$($user.id)/goals?status=ACTIVE"
 ```
 
+Calculations need no stored data:
+
+```powershell
+Invoke-RestMethod -Method Post "$api/calculations/loan" -ContentType "application/json" `
+  -Body '{"principal":"500000.00","annualInterestRate":"12.00","termMonths":36}'
+# monthlyPayment 16607.15 (×35), finalPayment 16607.33, totalRepayment 597857.58, totalInterest 97857.58
+```
+
 Money is always sent as a string (`"150000.00"`), never as a number. See [docs/api/domain-api.md](docs/api/domain-api.md) for every endpoint, rule and error, and for curl examples.
 
 All dev servers reload on change. To run the production builds instead:
@@ -181,5 +191,6 @@ Environment variables are documented in [.env.example](.env.example) and validat
 
 - [System overview](docs/architecture/system-overview.md): the target voice and web architecture
 - [Database](docs/architecture/database.md): schema, money representation, indexing and migration strategy
+- [Financial calculation engine](docs/architecture/financial-calculation-engine.md): formulas, rounding policy, and why AI never does the maths
 - [API endpoints](docs/api/README.md) and the [domain API reference](docs/api/domain-api.md)
 - [ADR 0001: Repository foundation](docs/decisions/0001-repository-foundation.md): why the foundation looks the way it does

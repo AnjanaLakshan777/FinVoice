@@ -1,15 +1,18 @@
+import {
+  isPositiveMoneyString,
+  MONEY_FORMAT_DESCRIPTION,
+  MONEY_PATTERN,
+} from "@finvoice/finance-engine";
 import { z } from "zod";
 
 /**
  * Monetary amounts travel as decimal strings, never JSON numbers, because binary floating
- * point cannot represent most decimal fractions exactly. The format matches the database's
- * NUMERIC(14,2): up to 12 integer digits, up to 2 decimal places, no sign, no exponent,
- * no leading zeros. Responses always use exactly 2 decimal places ("1500.00").
+ * point cannot represent most decimal fractions exactly. The format is defined once, in
+ * @finvoice/finance-engine, and matches the database's NUMERIC(14,2): up to 12 integer digits,
+ * up to 2 decimal places, no sign, no exponent, no leading zeros. Responses always use exactly
+ * 2 decimal places ("1500.00").
  */
-const MONEY_PATTERN = /^(0|[1-9][0-9]{0,11})(\.[0-9]{1,2})?$/;
-const ZERO_PATTERN = /^0(\.0{1,2})?$/;
-const MONEY_FORMAT_MESSAGE =
-  'Must be a non-negative decimal string with at most 2 decimal places and at most 12 integer digits, e.g. "1500.00"';
+const MONEY_FORMAT_MESSAGE = `Must be ${MONEY_FORMAT_DESCRIPTION}`;
 
 /** A non-negative monetary amount, e.g. "0", "100.5", "150000.00". */
 export const moneyAmountSchema = z
@@ -18,7 +21,8 @@ export const moneyAmountSchema = z
 
 /** A monetary amount greater than zero. */
 export const positiveMoneyAmountSchema = moneyAmountSchema.refine(
-  (value) => !ZERO_PATTERN.test(value),
+  // Only judge well-formed amounts: a malformed one already has a format error.
+  (value) => !MONEY_PATTERN.test(value) || isPositiveMoneyString(value),
   {
     error: "Must be greater than 0",
   },

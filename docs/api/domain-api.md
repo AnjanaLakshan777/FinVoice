@@ -1,6 +1,6 @@
 # Domain API (v1)
 
-The FinVoice backend API for users, financial profiles and financial goals. Clients are the web app, the voice gateway and future phone/AI flows.
+The FinVoice backend API for users, financial profiles, financial goals and financial calculations. Clients are the web app, the voice gateway and future phone/AI flows.
 
 **The API is authoritative.** Every rule below is enforced by the backend (request validation, then service checks, then database constraints), whatever a client, voice flow or AI model has already checked. Clients may propose values; the API decides what is stored.
 
@@ -30,6 +30,9 @@ The FinVoice backend API for users, financial profiles and financial goals. Clie
 | `GET`   | `/users/:userId/goals`             | 200     | List the user's goals (filters, pagination) |
 | `GET`   | `/users/:userId/goals/:goalId`     | 200     | Get one of the user's goals                 |
 | `PATCH` | `/users/:userId/goals/:goalId`     | 200     | Update one of the user's goals              |
+| `POST`  | `/calculations/loan`               | 200     | Calculate a loan repayment                  |
+| `POST`  | `/calculations/savings`            | 200     | Calculate a savings plan                    |
+| `POST`  | `/calculations/budget`             | 200     | Calculate a budget summary                  |
 
 There are no delete endpoints and no list-users endpoint. Goals end through their `status` (`COMPLETED`, `CANCELLED`). Users are deactivated through `status: "INACTIVE"`.
 
@@ -209,6 +212,125 @@ Any of `type`, `name`, `targetAmount`, `currentAmount`, `targetDate` (null clear
 
 The status changes only when the client sends `status`. Reaching the target does not complete a goal automatically. Any status can be set from any other.
 
+## Calculations
+
+Stateless calculations by the [financial calculation engine](../architecture/financial-calculation-engine.md). They read and store nothing (no user is needed), always return `200` on success, and give the same result for the same input.
+
+- **Send inputs only.** Result fields such as `monthlyPayment`, `finalPayment`, `totalInterest`, `totalRepayment`, `requiredMonthlyContribution`, `monthlySurplus`, `savingsRate` or `calculationVersion` are rejected with `400` as unknown properties. The server always calculates them itself.
+- **Money** follows the [money rules](#money). **Percentages** are decimal strings with at most 2 decimal places (`"12"`, `"12.50"`). Months are JSON integers.
+- **Outputs**: money and percentages are strings with exactly 2 decimal places, rounded half away from zero. Inputs are echoed back normalised (`"500000"` → `"500000.00"`) but never rounded; invalid values are rejected.
+- Every result includes `"calculationVersion": "1"`, which identifies the rules used.
+- Results are **illustrative arithmetic, not financial advice or a lender quote**.
+
+### `POST /calculations/loan`
+
+Standard reducing-balance loan with equal monthly payments.
+
+| Field                | Rules                                 |
+| -------------------- | ------------------------------------- |
+| `principal`          | Required money string > 0             |
+| `annualInterestRate` | Required percentage string, 0–1000.00 |
+| `termMonths`         | Required whole number, 1–600          |
+
+```json
+{ "principal": "500000.00", "annualInterestRate": "12.00", "termMonths": 36 }
+```
+
+`200 OK`:
+
+```json
+{
+  "calculationVersion": "1",
+  "principal": "500000.00",
+  "annualInterestRate": "12.00",
+  "termMonths": 36,
+  "monthlyPayment": "16607.15",
+  "finalPayment": "16607.33",
+  "totalRepayment": "597857.58",
+  "totalInterest": "97857.58",
+  "assumptions": {
+    "interestMethod": "reducing_balance",
+    "paymentFrequency": "monthly",
+    "monthlyRateMethod": "annual_rate_divided_by_12",
+    "feesIncluded": false,
+    "insuranceIncluded": false,
+    "earlyRepaymentIncluded": false
+  }
+}
+```
+
+- `monthlyPayment` is the regular payment for months 1 to `termMonths` − 1: the exact payment rounded to cents.
+- `finalPayment` is the last payment. It absorbs the cent rounding, so it can differ from `monthlyPayment` by a few cents.
+- `totalRepayment` is the exact payment × `termMonths`, rounded once, and always equals `monthlyPayment` × (`termMonths` − 1) + `finalPayment`.
+- `totalInterest` = `totalRepayment` − `principal`. It is never negative, and is exactly `"0.00"` for a 0% loan: 100,000 over 12 months is 11 × 8,333.33 plus a final 8,333.37 = 100,000.00.
+- For a one-month loan, `monthlyPayment` and `finalPayment` are the same single payment.
+- A principal so small that the regular payment would be `0.00` is rejected.
+
+### `POST /calculations/savings`
+
+Monthly contributions to reach a target. No interest, returns or inflation.
+
+| Field           | Rules                                       |
+| --------------- | ------------------------------------------- |
+| `targetAmount`  | Required money string > 0                   |
+| `currentAmount` | Required money string ≥ 0, ≤ `targetAmount` |
+| `months`        | Required whole number, 1–600                |
+
+```json
+{ "targetAmount": "300000.00", "currentAmount": "50000.00", "months": 12 }
+```
+
+`200 OK`:
+
+```json
+{
+  "calculationVersion": "1",
+  "targetAmount": "300000.00",
+  "currentAmount": "50000.00",
+  "remainingAmount": "250000.00",
+  "months": 12,
+  "requiredMonthlyContribution": "20833.33",
+  "finalContribution": "20833.37",
+  "plannedTotalContribution": "250000.00",
+  "differenceFromTarget": "0.00"
+}
+```
+
+- `requiredMonthlyContribution` is the regular contribution for months 1 to `months` − 1, rounded to cents.
+- `finalContribution` is the last one. It absorbs the rounding, so the plan reaches the target exactly: `plannedTotalContribution` = `remainingAmount`, and `differenceFromTarget` is `"0.00"`.
+- If `currentAmount` equals `targetAmount`, every amount is `"0.00"`.
+
+### `POST /calculations/budget`
+
+| Field             | Rules                     |
+| ----------------- | ------------------------- |
+| `monthlyIncome`   | Required money string ≥ 0 |
+| `monthlyExpenses` | Required money string ≥ 0 |
+
+```json
+{ "monthlyIncome": "150000.00", "monthlyExpenses": "100000.00" }
+```
+
+`200 OK`:
+
+```json
+{
+  "calculationVersion": "1",
+  "monthlyIncome": "150000.00",
+  "monthlyExpenses": "100000.00",
+  "monthlySurplus": "50000.00",
+  "expenseRatio": "66.67",
+  "savingsRate": "33.33",
+  "status": "SURPLUS"
+}
+```
+
+- `monthlySurplus` = income − expenses. It is negative for a deficit.
+- `expenseRatio` = expenses / income × 100.
+- `savingsRate` = surplus / income × 100, which can be negative.
+- `status` is `SURPLUS`, `BREAK_EVEN` or `DEFICIT`.
+- With zero income, `expenseRatio` and `savingsRate` are `null`.
+
 ## Errors
 
 Every error from the API (domain routes, unknown routes and malformed requests) has the same shape:
@@ -252,6 +374,10 @@ curl -s -X POST $API/users/$USER_ID/goals -H 'content-type: application/json' \
   -d '{"type":"EMERGENCY_FUND","name":"Emergency Fund","targetAmount":"300000.00","targetDate":"2027-06-30"}'
 
 curl -s "$API/users/$USER_ID/goals?status=ACTIVE&page=1&limit=20"
+
+# Calculations need no stored data
+curl -s -X POST $API/calculations/loan -H 'content-type: application/json' \
+  -d '{"principal":"500000.00","annualInterestRate":"12.00","termMonths":36}'
 ```
 
 In PowerShell, use `Invoke-RestMethod`:

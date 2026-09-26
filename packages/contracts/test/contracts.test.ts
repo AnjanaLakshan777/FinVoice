@@ -54,6 +54,16 @@ describe("positiveMoneyAmountSchema", () => {
   it.each(["0.01", "1", "300000.00"])("accepts %j", (value) => {
     expect(positiveMoneyAmountSchema.safeParse(value).success).toBe(true);
   });
+
+  it.each(["100.123", "-5", "abc"])(
+    "reports only the format error for the malformed %j",
+    (value) => {
+      const result = positiveMoneyAmountSchema.safeParse(value);
+
+      expect(result.error?.issues).toHaveLength(1);
+      expect(result.error?.issues[0]?.message).not.toBe("Must be greater than 0");
+    },
+  );
 });
 
 describe("currencyCodeSchema", () => {
