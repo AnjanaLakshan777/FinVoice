@@ -17,6 +17,7 @@ describe("loadApiConfig", () => {
       host: "127.0.0.1",
       port: 4000,
       database: { url: DATABASE_URL },
+      gemini: { apiKey: null, model: "gemini-3.8-flash" },
     });
   });
 
@@ -33,7 +34,35 @@ describe("loadApiConfig", () => {
       host: "0.0.0.0",
       port: 8080,
       database: { url: DATABASE_URL },
+      gemini: { apiKey: null, model: "gemini-3.8-flash" },
     });
+  });
+
+  it("reads the Gemini settings and treats an empty key as not set", () => {
+    const fakeKey = "fake-gemini-key-for-tests";
+
+    expect(
+      loadApiConfig({ DATABASE_URL, GEMINI_API_KEY: fakeKey, GEMINI_MODEL: "gemini-test-model" })
+        .gemini,
+    ).toEqual({ apiKey: fakeKey, model: "gemini-test-model" });
+    expect(loadApiConfig({ DATABASE_URL, GEMINI_API_KEY: "  " }).gemini.apiKey).toBeNull();
+  });
+
+  it("rejects an invalid model name without echoing the key", () => {
+    let error: unknown;
+    try {
+      loadApiConfig({
+        DATABASE_URL,
+        GEMINI_API_KEY: "secret-key-value",
+        GEMINI_MODEL: "bad model!",
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(ConfigValidationError);
+    expect((error as Error).message).toMatch(/GEMINI_MODEL/);
+    expect((error as Error).message).not.toContain("secret-key-value");
   });
 
   it("rejects an invalid port", () => {

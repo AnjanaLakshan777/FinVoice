@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 
+import { AgentModule } from "./ai/agent/agent.module.js";
 import { CalculationsModule } from "./calculations/calculations.module.js";
 import { ApiConfigModule } from "./config/api-config.module.js";
 import { DatabaseModule } from "./database/database.module.js";
@@ -19,6 +20,7 @@ import { UsersModule } from "./users/users.module.js";
     FinancialGoalsModule,
     CalculationsModule,
     KnowledgeModule,
+    AgentModule,
   ],
 })
 export class AppModule {}

@@ -1,6 +1,6 @@
 # Domain API (v1)
 
-The FinVoice backend API for users, financial profiles, financial goals, financial calculations and financial-literacy knowledge. Clients are the web app, the voice gateway and future phone/AI flows.
+The FinVoice backend API for users, financial profiles, financial goals, financial calculations, financial-literacy knowledge and the AI agent. Clients are the web app, the voice gateway and future phone/AI flows.
 
 **The API is authoritative.** Every rule below is enforced by the backend (request validation, then service checks, then database constraints), whatever a client, voice flow or AI model has already checked. Clients may propose values; the API decides what is stored.
 
@@ -36,6 +36,7 @@ The FinVoice backend API for users, financial profiles, financial goals, financi
 | `GET`   | `/knowledge/categories`            | 200     | Categories that have published knowledge    |
 | `GET`   | `/knowledge/articles`              | 200     | List or search published knowledge articles |
 | `GET`   | `/knowledge/articles/:slug`        | 200     | Get one published knowledge article         |
+| `POST`  | `/agent/chat`                      | 200     | Ask the FinVoice AI agent a question        |
 
 There are no delete endpoints and no list-users endpoint. Goals end through their `status` (`COMPLETED`, `CANCELLED`). Users are deactivated through `status: "INACTIVE"`.
 
@@ -430,6 +431,48 @@ Returns one published article in the same shape, for example `GET /knowledge/art
 - A malformed slug (not lower-case kebab-case) returns `400`.
 - An unknown, draft or archived slug returns `404` with `"Knowledge article not found"`.
 
+## Agent
+
+Text chat with the FinVoice AI agent (see [ai-agent.md](../architecture/ai-agent.md)). The agent answers financial-literacy questions from the [knowledge base](#knowledge) and does calculations with the [calculation engine](#calculations). It does not store conversations.
+
+### `POST /agent/chat`
+
+| Field      | Rules                                                             |
+| ---------- | ----------------------------------------------------------------- |
+| `message`  | Required string, trimmed, 1–2000 characters                       |
+| `language` | Optional `EN` (default), `SI` or `TA`: the language of the answer |
+
+Every other field is rejected with `400`, including `system`, `systemInstruction`, `tools`, `model`, `temperature`, `history`, tool results and calculation results. The instructions, tools, model and all tool results are controlled by the server.
+
+```json
+{ "message": "What is the monthly payment for a Rs. 500000 loan at 12 percent for 36 months?" }
+```
+
+`200 OK`:
+
+```json
+{
+  "message": "Your regular monthly payment is Rs. 16,607.15 and your final payment is Rs. 16,607.33. …",
+  "language": "EN",
+  "agentVersion": "1",
+  "usedTools": ["calculate_loan"]
+}
+```
+
+- `message` is the answer, in plain text, in `language`.
+  - Figures come from the calculation tools and facts from the knowledge tools.
+  - Loan answers say the result is an illustration, not a lender's quote.
+- `agentVersion` identifies the agent's instructions, tools and policies. It is separate from `calculationVersion`.
+- `usedTools` lists the tools that ran successfully for this answer, each once and without arguments. Possible values: `search_knowledge`, `get_knowledge_article`, `calculate_loan`, `calculate_savings`, `calculate_budget`.
+
+Each request is independent, with no conversation history, and can take several seconds. The agent makes at most 5 tool calls per request. If it needs more, it answers with a fixed message asking for a simpler question.
+
+| Status | `code`                | When                                                                                             |
+| ------ | --------------------- | ------------------------------------------------------------------------------------------------ |
+| 400    | `VALIDATION_ERROR`    | Empty or too long message, unknown language or unknown field                                     |
+| 502    | `BAD_GATEWAY`         | The AI provider failed or returned an unusable response                                          |
+| 503    | `SERVICE_UNAVAILABLE` | The agent is not configured (no `GEMINI_API_KEY`), or the AI provider is temporarily unavailable |
+
 ## Errors
 
 Every error from the API (domain routes, unknown routes and malformed requests) has the same shape:
@@ -452,7 +495,8 @@ Every error from the API (domain routes, unknown routes and malformed requests) 
 | 404    | `NOT_FOUND`           | The user, profile or goal does not exist or belongs to another user; unknown route                           |
 | 409    | `CONFLICT`            | Phone number already registered; the data changed concurrently (retrying may succeed)                        |
 | 413    | `PAYLOAD_TOO_LARGE`   | Request body over 100 kB                                                                                     |
-| 503    | `SERVICE_UNAVAILABLE` | The database cannot be reached                                                                               |
+| 502    | `BAD_GATEWAY`         | The AI provider failed or returned an unusable response (agent only)                                         |
+| 503    | `SERVICE_UNAVAILABLE` | The database cannot be reached; the AI agent is not configured or temporarily unavailable                    |
 | 500    | `INTERNAL_ERROR`      | Anything unexpected                                                                                          |
 
 Error responses never contain SQL, database or Prisma messages, constraint names, stack traces, connection strings or credentials. Unexpected errors are logged on the server, with connection strings redacted.

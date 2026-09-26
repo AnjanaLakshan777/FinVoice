@@ -12,7 +12,8 @@ allowBuilds:
   # Not needed: prebuilt platform binaries are installed as optional dependencies.
   esbuild: false
   unrs-resolver: false
-  # Not needed: environment/version notices only.
+  # Not needed: environment/version notices only (@google/genai: a no-op preinstall echo).
+  "@google/genai": false
   prisma: false
   protobufjs: false
   # Not needed: optional native crypto for Docker-over-SSH (testcontainers uses the local socket).

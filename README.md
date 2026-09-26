@@ -4,18 +4,19 @@ FinVoice is a voice-first financial inclusion and financial literacy platform fo
 
 ## Current status
 
-**Step 5: financial knowledge base.** This repository has:
+**Step 6: AI agent (text).** This repository has:
 
 - a pnpm monorepo with strict TypeScript, ESLint, Prettier, Vitest and CI;
 - a placeholder **web app** (Next.js);
 - a **backend API** (NestJS) with a validated REST API for users, financial profiles and financial goals under `/api/v1`, plus liveness (`GET /health`) and database readiness (`GET /health/ready`) checks;
 - a framework-independent **financial calculation engine** (loan repayment, savings plan, budget summary) with exact decimal arithmetic, exposed under `/api/v1/calculations`;
 - a curated, source-backed **financial knowledge base** (12 articles based on Central Bank of Sri Lanka material, in English with some Sinhala and Tamil) with read-only retrieval under `/api/v1/knowledge`;
+- a text **AI agent** (Google Gemini, Interactions API) under `/api/v1/agent/chat` that answers from the knowledge base and calculates with the finance engine through validated, allowlisted tools;
 - a **PostgreSQL 18** schema managed by **Prisma migrations**: users, financial profiles and goals, and knowledge sources, articles and translations;
 - a **voice gateway** service (Node.js) with `GET /health`;
 - shared `shared`, `contracts`, `config` and `finance-engine` packages.
 
-There is no authentication yet, and no AI or voice integration or telephony. The target architecture is described in [docs/architecture/system-overview.md](docs/architecture/system-overview.md), the database design in [docs/architecture/database.md](docs/architecture/database.md), the calculation engine in [docs/architecture/financial-calculation-engine.md](docs/architecture/financial-calculation-engine.md), the knowledge base in [docs/architecture/financial-knowledge-base.md](docs/architecture/financial-knowledge-base.md) and the API in [docs/api/domain-api.md](docs/api/domain-api.md).
+There is no authentication yet, and no voice integration or telephony. The target architecture is described in [docs/architecture/system-overview.md](docs/architecture/system-overview.md), the database design in [docs/architecture/database.md](docs/architecture/database.md), the calculation engine in [docs/architecture/financial-calculation-engine.md](docs/architecture/financial-calculation-engine.md), the knowledge base in [docs/architecture/financial-knowledge-base.md](docs/architecture/financial-knowledge-base.md), the AI agent in [docs/architecture/ai-agent.md](docs/architecture/ai-agent.md) and the API in [docs/api/domain-api.md](docs/api/domain-api.md).
 
 ## Repository structure
 
@@ -129,6 +130,13 @@ Invoke-RestMethod -Method Post "$api/calculations/loan" -ContentType "applicatio
 # monthlyPayment 16607.15 (×35), finalPayment 16607.33, totalRepayment 597857.58, totalInterest 97857.58
 ```
 
+The AI agent needs `GEMINI_API_KEY` in your `.env` (server-side only; without it the agent answers `503` and everything else works):
+
+```powershell
+Invoke-RestMethod -Method Post "$api/agent/chat" -ContentType "application/json" `
+  -Body '{"message":"What is an emergency fund?","language":"EN"}'
+```
+
 Money is always sent as a string (`"150000.00"`), never as a number. See [docs/api/domain-api.md](docs/api/domain-api.md) for every endpoint, rule and error, and for curl examples.
 
 All dev servers reload on change. To run the production builds instead:
@@ -197,5 +205,6 @@ Environment variables are documented in [.env.example](.env.example) and validat
 - [Database](docs/architecture/database.md): schema, money representation, indexing and migration strategy
 - [Financial calculation engine](docs/architecture/financial-calculation-engine.md): formulas, rounding policy, and why AI never does the maths
 - [Financial knowledge base](docs/architecture/financial-knowledge-base.md): sources, translations, review dates, retrieval, and why there is no RAG yet
+- [AI agent](docs/architecture/ai-agent.md): Gemini integration, tools, validation, safety rules and API-key security
 - [API endpoints](docs/api/README.md) and the [domain API reference](docs/api/domain-api.md)
 - [ADR 0001: Repository foundation](docs/decisions/0001-repository-foundation.md): why the foundation looks the way it does
