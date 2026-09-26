@@ -1,7 +1,8 @@
 /**
- * Public entry point for FinVoice API and voice-tool contracts.
- *
- * Intentionally empty: contracts are added here only when a real API endpoint or
- * tool is implemented. See ../README.md for the conventions to follow.
+ * Public entry point for FinVoice API contracts: request schemas (zod, Standard Schema
+ * compatible) and response types for the domain API at /api/v1. See ../README.md.
  */
-export {};
+export * from "./common.js";
+export * from "./users.js";
+export * from "./financial-profiles.js";
+export * from "./financial-goals.js";

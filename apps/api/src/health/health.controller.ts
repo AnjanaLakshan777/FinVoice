@@ -1,9 +1,12 @@
 import type { DependencyStatus, ServiceHealth, ServiceReadiness } from "@finvoice/shared";
-import { Controller, Get, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { Controller, Get, HttpStatus, Logger, Res } from "@nestjs/common";
 
 import { PrismaService } from "../database/prisma.service.js";
 
 export const API_SERVICE_NAME = "finvoice-api";
+
+/** The part of the HTTP response used to set the status code. */
+type StatusResponse = { status(code: number): unknown };
 
 @Controller("health")
 export class HealthController {
@@ -17,9 +20,15 @@ export class HealthController {
     return { status: "ok", service: API_SERVICE_NAME };
   }
 
-  /** Readiness: the API can reach PostgreSQL. Responds 503 when it cannot. */
+  /**
+   * Readiness: the API can reach PostgreSQL. Responds 503 with the same body shape when it cannot.
+   * The status is set directly (not by throwing), because the global exception filter turns every
+   * unexpected 5xx into a generic error body.
+   */
   @Get("ready")
-  async getReadiness(): Promise<ServiceReadiness> {
+  async getReadiness(
+    @Res({ passthrough: true }) response: StatusResponse,
+  ): Promise<ServiceReadiness> {
     const database = await this.checkDatabase();
     const readiness: ServiceReadiness = {
       status: database === "up" ? "ok" : "error",
@@ -28,7 +37,7 @@ export class HealthController {
     };
 
     if (readiness.status === "error") {
-      throw new ServiceUnavailableException(readiness);
+      response.status(HttpStatus.SERVICE_UNAVAILABLE);
     }
     return readiness;
   }

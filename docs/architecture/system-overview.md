@@ -1,6 +1,6 @@
 # FinVoice system overview
 
-> **Status:** Step 2 (database foundation). The repository structure, service skeletons, health endpoints and the first database tables exist. Everything else in this document describes the **intended** architecture and will be built in later steps. The database design is documented in [database.md](database.md).
+> **Status:** Step 3 (domain API). The repository structure, service skeletons, health endpoints, the core database tables and a validated REST API for users, financial profiles and goals ([domain-api.md](../api/domain-api.md)) exist. Everything else in this document describes the **intended** architecture and will be built in later steps. The database design is documented in [database.md](database.md).
 
 ## Purpose
 
@@ -72,17 +72,17 @@ Browser-based voice conversations will also need a real-time audio connection to
 
 ## Repository mapping
 
-| Path                 | Component                                                | Step 1 state                  |
-| -------------------- | -------------------------------------------------------- | ----------------------------- |
-| `apps/web`           | Web application (Next.js)                                | Placeholder homepage          |
-| `apps/api`           | Backend API (NestJS)                                     | Health + database module      |
-| `apps/voice-gateway` | Voice gateway (Node.js)                                  | `GET /health` only            |
-| `packages/shared`    | Framework-agnostic shared types and utilities            | `ServiceHealth` type          |
-| `packages/contracts` | API and tool contracts                                   | Empty, conventions documented |
-| `packages/config`    | Environment parsing and validation                       | API and voice gateway loaders |
-| `docker-compose.yml` | Local infrastructure                                     | PostgreSQL 18                 |
-| `infrastructure/`    | Container, database and (later) telephony infrastructure | Placeholders                  |
+| Path                 | Component                                                | Step 1 state                                  |
+| -------------------- | -------------------------------------------------------- | --------------------------------------------- |
+| `apps/web`           | Web application (Next.js)                                | Placeholder homepage                          |
+| `apps/api`           | Backend API (NestJS)                                     | Health + domain API `/api/v1`                 |
+| `apps/voice-gateway` | Voice gateway (Node.js)                                  | `GET /health` only                            |
+| `packages/shared`    | Framework-agnostic shared types and utilities            | `ServiceHealth` type                          |
+| `packages/contracts` | API and tool contracts                                   | Domain API request schemas and response types |
+| `packages/config`    | Environment parsing and validation                       | API and voice gateway loaders                 |
+| `docker-compose.yml` | Local infrastructure                                     | PostgreSQL 18                                 |
+| `infrastructure/`    | Container, database and (later) telephony infrastructure | Placeholders                                  |
 
 ## Not yet built
 
-In later steps: Asterisk and SIP configuration, the AudioSocket server, Gemini Live integration, tool definitions, financial knowledge and calculations, scam detection, authentication, business APIs over the database, and deployment.
+In later steps: Asterisk and SIP configuration, the AudioSocket server, Gemini Live integration, tool definitions, financial knowledge and calculations, scam detection, authentication and authorisation, and deployment.

@@ -1,6 +1,6 @@
 # Database
 
-> **Status:** Step 2. The database foundation and the first core domain tables exist. No business APIs read or write them yet.
+> **Status:** Step 3. The core domain tables are read and written through the domain API ([docs/api/domain-api.md](../api/domain-api.md)).
 
 ## Choice of database and toolkit
 
@@ -102,10 +102,10 @@ All primary keys are `uuid` values generated **in the database** by PostgreSQL 1
 - **Why scale 2:** the Sri Lankan rupee (LKR, the default and expected currency) has 2 minor units (cents). All stored values are whole cents.
 - **Why precision 14:** this allows up to 999,999,999,999.99, about one trillion. That is far beyond any individual's income, expenses or goal, while keeping values bounded. Larger values are rejected with a numeric overflow error (Prisma `P2020`).
 - **Why not integer minor units (`BIGINT` cents):** that is also exact, but every read and write needs manual scaling, JSON has no 64-bit integer, and interest or percentage calculations still need decimal arithmetic. `NUMERIC` keeps the stored value, the API value and the spoken value identical.
-- **Rounding:** PostgreSQL silently rounds values with more than 2 decimal places to the column's scale (half away from zero). The database cannot detect this, so **the application must reject amounts with more than 2 decimal places** before writing them, once write APIs exist.
+- **Rounding:** PostgreSQL silently rounds values with more than 2 decimal places to the column's scale (half away from zero). The database cannot detect this, so the API rejects amounts with more than 2 decimal places before writing them (see [domain-api.md](../api/domain-api.md#money)).
 - **Sign rules** are enforced by CHECK constraints (see below). They also reject `NaN`: PostgreSQL `NUMERIC` accepts `'NaN'` and orders it above every number, so `>= 0` alone would let it through.
 - **Other currencies:** the column is ready for them, but scale 2 matches LKR and most currencies. Supporting a currency with a different number of minor units (for example 3 or 0) would need a deliberate migration and a per-currency validation rule.
-- **In API payloads** (future), amounts should be sent as decimal **strings** (`"150000.00"`), never as JSON numbers.
+- **In API payloads**, amounts are decimal **strings** (`"150000.00"`), never JSON numbers.
 
 ## Enumerations
 
@@ -138,7 +138,7 @@ Prisma's schema language cannot express CHECK constraints, so they are written b
 | `financial_goals_current_amount_non_negative_check`      | `>= 0` (not NaN)                  |
 | `financial_goals_current_amount_within_target_check`     | `current_amount <= target_amount` |
 
-The database is the last line of defence, not the only one. Future write APIs will validate the same rules first, so users get friendly errors instead of constraint violations.
+The database is the last line of defence, not the only one. The domain API validates the same rules first, so clients get clear validation errors instead of constraint violations.
 
 ## Indexing strategy
 

@@ -1,10 +1,28 @@
 # API documentation
 
-HTTP interfaces exposed by FinVoice services. Endpoints are documented here when they are implemented; their request and response types live in `packages/contracts`.
+HTTP interfaces exposed by FinVoice services. Endpoints are documented when they are implemented; their request schemas and response types live in `packages/contracts`.
 
 ## Backend API (`apps/api`)
 
 Default local base URL: `http://127.0.0.1:4000`
+
+### Domain API: `/api/v1`
+
+Users, financial profiles and financial goals: endpoints, validation rules, money and date formats, pagination and the error format are documented in **[domain-api.md](domain-api.md)**.
+
+| Method  | Path                                      |
+| ------- | ----------------------------------------- |
+| `POST`  | `/api/v1/users`                           |
+| `GET`   | `/api/v1/users/:userId`                   |
+| `PATCH` | `/api/v1/users/:userId`                   |
+| `GET`   | `/api/v1/users/:userId/financial-profile` |
+| `PUT`   | `/api/v1/users/:userId/financial-profile` |
+| `POST`  | `/api/v1/users/:userId/goals`             |
+| `GET`   | `/api/v1/users/:userId/goals`             |
+| `GET`   | `/api/v1/users/:userId/goals/:goalId`     |
+| `PATCH` | `/api/v1/users/:userId/goals/:goalId`     |
+
+Health checks are not versioned and stay at the root, for load balancers and orchestrators.
 
 ### `GET /health`
 

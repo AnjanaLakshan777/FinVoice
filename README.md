@@ -4,16 +4,16 @@ FinVoice is a voice-first financial inclusion and financial literacy platform fo
 
 ## Current status
 
-**Step 2: database foundation.** This repository has:
+**Step 3: domain API.** This repository has:
 
 - a pnpm monorepo with strict TypeScript, ESLint, Prettier, Vitest and CI;
 - a placeholder **web app** (Next.js);
-- a **backend API** (NestJS) with liveness (`GET /health`) and database readiness (`GET /health/ready`) checks;
+- a **backend API** (NestJS) with a validated REST API for users, financial profiles and financial goals under `/api/v1`, plus liveness (`GET /health`) and database readiness (`GET /health/ready`) checks;
 - a **PostgreSQL 18** schema managed by **Prisma migrations**, with the first core tables (`users`, `financial_profiles`, `financial_goals`);
 - a **voice gateway** service (Node.js) with `GET /health`;
 - shared `shared`, `contracts` and `config` packages.
 
-There are no product features yet: no business APIs, AI or voice integration, telephony, financial logic or authentication. The target architecture is described in [docs/architecture/system-overview.md](docs/architecture/system-overview.md) and the database design in [docs/architecture/database.md](docs/architecture/database.md).
+There is no authentication yet, and no AI or voice integration, telephony or financial calculations. The target architecture is described in [docs/architecture/system-overview.md](docs/architecture/system-overview.md), the database design in [docs/architecture/database.md](docs/architecture/database.md) and the API in [docs/api/domain-api.md](docs/api/domain-api.md).
 
 ## Repository structure
 
@@ -26,7 +26,7 @@ finvoice/
 │   └── voice-gateway/    Node.js real-time voice service    → http://127.0.0.1:4100
 ├── packages/
 │   ├── shared/           Framework-agnostic shared types (e.g. ServiceHealth)
-│   ├── contracts/        API and voice-tool contracts (empty until endpoints exist)
+│   ├── contracts/        API request schemas and response types (shared by API and clients)
 │   └── config/           Validated environment configuration for each service
 ├── infrastructure/
 │   ├── docker/           Container build files (future)
@@ -70,7 +70,11 @@ Edit `.env` and replace the placeholder values. Set `POSTGRES_PASSWORD`, and use
 pnpm db:up        # docker compose up --detach --wait postgres
 ```
 
-This waits until the container's health check passes. PostgreSQL is then available on `127.0.0.1:5432` (or `POSTGRES_PORT`). Related commands:
+This waits until the container's health check passes. PostgreSQL is then available on `127.0.0.1:5432`, or on `POSTGRES_PORT` if you set it.
+
+> **Port 5432 already in use?** If another PostgreSQL (for example a Windows installation) is running on this machine, set another port in **your** `.env`: `POSTGRES_PORT=5433`, and use the same port in `DATABASE_URL` (`…@localhost:5433/finvoice`). `.env` is machine-specific; the project default stays 5432.
+
+Related commands:
 
 ```sh
 pnpm db:logs                    # follow PostgreSQL logs
@@ -97,6 +101,23 @@ Each command below builds the shared packages first when needed. In development,
 | All three     | `pnpm dev`               | as above                     |
 
 To confirm the API can reach PostgreSQL, open http://127.0.0.1:4000/health/ready. It returns `200` with `"database": "up"`, or `503` if the database is unreachable.
+
+### Trying the API
+
+With `pnpm dev:api` running and migrations applied, the domain API is at `http://127.0.0.1:4000/api/v1`. For example, in PowerShell:
+
+```powershell
+$api = "http://127.0.0.1:4000/api/v1"
+$user = Invoke-RestMethod -Method Post "$api/users" -ContentType "application/json" `
+  -Body '{"phoneNumber":"+94000000901","preferredLanguage":"SI","displayName":"Demo"}'
+Invoke-RestMethod -Method Put "$api/users/$($user.id)/financial-profile" -ContentType "application/json" `
+  -Body '{"monthlyIncome":"150000.00","monthlyExpenses":"100000.00"}'
+Invoke-RestMethod -Method Post "$api/users/$($user.id)/goals" -ContentType "application/json" `
+  -Body '{"type":"EMERGENCY_FUND","name":"Emergency Fund","targetAmount":"300000.00","targetDate":"2027-06-30"}'
+Invoke-RestMethod "$api/users/$($user.id)/goals?status=ACTIVE"
+```
+
+Money is always sent as a string (`"150000.00"`), never as a number. See [docs/api/domain-api.md](docs/api/domain-api.md) for every endpoint, rule and error, and for curl examples.
 
 All dev servers reload on change. To run the production builds instead:
 
@@ -143,7 +164,7 @@ The schema lives in [apps/api/prisma/schema.prisma](apps/api/prisma/schema.prism
 
 1. They start a disposable PostgreSQL container, with the same image and ICU settings as `docker-compose.yml`, using [Testcontainers](https://testcontainers.com/).
 2. They apply every migration with `prisma migrate deploy`.
-3. They check the constraints, indexes, relationships and migration state.
+3. They check the constraints, indexes, relationships and migration state, and exercise every `/api/v1` endpoint over HTTP against that database.
 4. They remove the container.
 
 The first run downloads the PostgreSQL image.
@@ -160,5 +181,5 @@ Environment variables are documented in [.env.example](.env.example) and validat
 
 - [System overview](docs/architecture/system-overview.md): the target voice and web architecture
 - [Database](docs/architecture/database.md): schema, money representation, indexing and migration strategy
-- [API endpoints](docs/api/README.md)
+- [API endpoints](docs/api/README.md) and the [domain API reference](docs/api/domain-api.md)
 - [ADR 0001: Repository foundation](docs/decisions/0001-repository-foundation.md): why the foundation looks the way it does
