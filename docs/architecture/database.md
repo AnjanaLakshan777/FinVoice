@@ -1,6 +1,6 @@
 # Database
 
-> **Status:** Step 3. The core domain tables are read and written through the domain API ([docs/api/domain-api.md](../api/domain-api.md)).
+> **Status:** Step 5. The core domain tables are read and written through the domain API ([docs/api/domain-api.md](../api/domain-api.md)). The knowledge base tables (`knowledge_sources`, `knowledge_articles`, `knowledge_article_translations`) are documented in [financial-knowledge-base.md](financial-knowledge-base.md).
 
 ## Choice of database and toolkit
 

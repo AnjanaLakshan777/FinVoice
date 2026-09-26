@@ -4,17 +4,18 @@ FinVoice is a voice-first financial inclusion and financial literacy platform fo
 
 ## Current status
 
-**Step 4: financial calculation engine.** This repository has:
+**Step 5: financial knowledge base.** This repository has:
 
 - a pnpm monorepo with strict TypeScript, ESLint, Prettier, Vitest and CI;
 - a placeholder **web app** (Next.js);
 - a **backend API** (NestJS) with a validated REST API for users, financial profiles and financial goals under `/api/v1`, plus liveness (`GET /health`) and database readiness (`GET /health/ready`) checks;
 - a framework-independent **financial calculation engine** (loan repayment, savings plan, budget summary) with exact decimal arithmetic, exposed under `/api/v1/calculations`;
-- a **PostgreSQL 18** schema managed by **Prisma migrations**, with the first core tables (`users`, `financial_profiles`, `financial_goals`);
+- a curated, source-backed **financial knowledge base** (12 articles based on Central Bank of Sri Lanka material, in English with some Sinhala and Tamil) with read-only retrieval under `/api/v1/knowledge`;
+- a **PostgreSQL 18** schema managed by **Prisma migrations**: users, financial profiles and goals, and knowledge sources, articles and translations;
 - a **voice gateway** service (Node.js) with `GET /health`;
 - shared `shared`, `contracts`, `config` and `finance-engine` packages.
 
-There is no authentication yet, and no AI or voice integration or telephony. The target architecture is described in [docs/architecture/system-overview.md](docs/architecture/system-overview.md), the database design in [docs/architecture/database.md](docs/architecture/database.md), the calculation engine in [docs/architecture/financial-calculation-engine.md](docs/architecture/financial-calculation-engine.md) and the API in [docs/api/domain-api.md](docs/api/domain-api.md).
+There is no authentication yet, and no AI or voice integration or telephony. The target architecture is described in [docs/architecture/system-overview.md](docs/architecture/system-overview.md), the database design in [docs/architecture/database.md](docs/architecture/database.md), the calculation engine in [docs/architecture/financial-calculation-engine.md](docs/architecture/financial-calculation-engine.md), the knowledge base in [docs/architecture/financial-knowledge-base.md](docs/architecture/financial-knowledge-base.md) and the API in [docs/api/domain-api.md](docs/api/domain-api.md).
 
 ## Repository structure
 
@@ -88,7 +89,8 @@ docker compose down --volumes   # stop and delete all local data
 
 ```sh
 pnpm db:migrate          # prisma migrate deploy: applies pending migrations
-pnpm db:seed             # optional: loads fake demo data (local databases only)
+pnpm db:seed:knowledge   # loads the curated knowledge base (insert-only, safe to repeat)
+pnpm db:seed             # optional: loads fake demo users and goals (local databases only)
 ```
 
 ## Running the applications
@@ -147,6 +149,7 @@ The schema lives in [apps/api/prisma/schema.prisma](apps/api/prisma/schema.prism
 | Apply pending migrations                    | `pnpm db:migrate`                         |
 | Show migration status                       | `pnpm db:migrate:status`                  |
 | Create a migration after editing the schema | `pnpm db:migrate:create --name <change>`  |
+| Load the curated knowledge base             | `pnpm db:seed:knowledge`                  |
 | Load the fake development seed data         | `pnpm db:seed`                            |
 | Regenerate the Prisma client                | `pnpm --filter @finvoice/api db:generate` |
 
@@ -154,6 +157,7 @@ The schema lives in [apps/api/prisma/schema.prisma](apps/api/prisma/schema.prism
 - `db:migrate:create` writes the SQL for your schema change **without applying it**. Review it, add any CHECK constraints, then run `pnpm db:migrate`.
 - `db:migrate:status` lists applied and pending migrations and exits non-zero if the database is behind.
 - Never edit a migration that has been applied anywhere, and never run `prisma migrate reset` or `prisma db push` against a shared database.
+- `db:seed:knowledge` inserts only missing knowledge records and never updates or deletes existing ones, so it is safe to repeat and never overwrites edited content. With `NODE_ENV=production` it needs `--allow-production`.
 - `db:seed` is deterministic, uses fake phone numbers, and refuses to run when `NODE_ENV=production` or the database is not local.
 
 ## Tests and quality checks
@@ -192,5 +196,6 @@ Environment variables are documented in [.env.example](.env.example) and validat
 - [System overview](docs/architecture/system-overview.md): the target voice and web architecture
 - [Database](docs/architecture/database.md): schema, money representation, indexing and migration strategy
 - [Financial calculation engine](docs/architecture/financial-calculation-engine.md): formulas, rounding policy, and why AI never does the maths
+- [Financial knowledge base](docs/architecture/financial-knowledge-base.md): sources, translations, review dates, retrieval, and why there is no RAG yet
 - [API endpoints](docs/api/README.md) and the [domain API reference](docs/api/domain-api.md)
 - [ADR 0001: Repository foundation](docs/decisions/0001-repository-foundation.md): why the foundation looks the way it does

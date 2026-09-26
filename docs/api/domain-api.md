@@ -1,6 +1,6 @@
 # Domain API (v1)
 
-The FinVoice backend API for users, financial profiles, financial goals and financial calculations. Clients are the web app, the voice gateway and future phone/AI flows.
+The FinVoice backend API for users, financial profiles, financial goals, financial calculations and financial-literacy knowledge. Clients are the web app, the voice gateway and future phone/AI flows.
 
 **The API is authoritative.** Every rule below is enforced by the backend (request validation, then service checks, then database constraints), whatever a client, voice flow or AI model has already checked. Clients may propose values; the API decides what is stored.
 
@@ -33,6 +33,9 @@ The FinVoice backend API for users, financial profiles, financial goals and fina
 | `POST`  | `/calculations/loan`               | 200     | Calculate a loan repayment                  |
 | `POST`  | `/calculations/savings`            | 200     | Calculate a savings plan                    |
 | `POST`  | `/calculations/budget`             | 200     | Calculate a budget summary                  |
+| `GET`   | `/knowledge/categories`            | 200     | Categories that have published knowledge    |
+| `GET`   | `/knowledge/articles`              | 200     | List or search published knowledge articles |
+| `GET`   | `/knowledge/articles/:slug`        | 200     | Get one published knowledge article         |
 
 There are no delete endpoints and no list-users endpoint. Goals end through their `status` (`COMPLETED`, `CANCELLED`). Users are deactivated through `status: "INACTIVE"`.
 
@@ -330,6 +333,102 @@ Monthly contributions to reach a target. No interest, returns or inflation.
 - `savingsRate` = surplus / income × 100, which can be negative.
 - `status` is `SURPLUS`, `BREAK_EVEN` or `DEFICIT`.
 - With zero income, `expenseRatio` and `savingsRate` are `null`.
+
+## Knowledge
+
+A read-only API over curated, source-backed financial-literacy articles (see [financial-knowledge-base.md](../architecture/financial-knowledge-base.md)).
+
+- Only **published** articles are returned. Drafts and archived articles never appear, and asking for one by slug gives the same `404` as an unknown slug.
+- Every article includes its **source** (publisher, title, URL, section, when last verified) and a **review** status.
+- There are **no write endpoints**. Content is managed through a controlled seed.
+- Articles are educational. They do not recommend products or institutions, and contain no calculations: use the [calculation endpoints](#calculations) for figures.
+
+**Language fallback:** `language` selects `EN` (default), `SI` or `TA`. If an article has no translation in that language, the English text is returned, and the response shows both `requestedLanguage` and the `language` actually returned. Text is never machine-translated on the fly. `translationStatus` shows how the returned text was produced:
+
+- `OFFICIAL`: the source's own wording.
+- `HUMAN_REVIEWED`: checked by a qualified person.
+- `MACHINE_ASSISTED`: not yet reviewed.
+
+All current content is `MACHINE_ASSISTED`.
+
+**Time-sensitive facts:** `review.reviewRequired` is `true` when an article contains facts that can change (`isTimeSensitive`) and is past its review date. Such articles are still returned, but their figures must not be presented as current; check the source.
+
+### `GET /knowledge/categories`
+
+Categories with at least one published article, in a fixed order:
+
+```json
+{
+  "data": [
+    { "category": "SAVING", "articleCount": 2 },
+    { "category": "BUDGETING", "articleCount": 1 }
+  ]
+}
+```
+
+Categories: `SAVING`, `BUDGETING`, `BORROWING`, `DIGITAL_FINANCE`, `CONSUMER_PROTECTION`, `SCAMS`, `DEPOSIT_PROTECTION`, `GENERAL_FINANCIAL_LITERACY`.
+
+### `GET /knowledge/articles`
+
+| Parameter  | Values                                                                                                                 | Default |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------- | ------- |
+| `language` | `EN`, `SI`, `TA`                                                                                                       | `EN`    |
+| `category` | one of the categories above                                                                                            | all     |
+| `query`    | 1–100 characters, matched case-insensitively in title, summary, body or keywords, in the requested language or English | none    |
+| `page`     | integer ≥ 1                                                                                                            | `1`     |
+| `limit`    | integer 1–100                                                                                                          | `20`    |
+
+Unknown parameters are rejected with `400`. Results are ordered by category, then slug. `%` and `_` in `query` are matched literally.
+
+```json
+{
+  "data": [
+    {
+      "slug": "deposit-insurance",
+      "category": "DEPOSIT_PROTECTION",
+      "audience": "GENERAL_PUBLIC",
+      "requestedLanguage": "SI",
+      "language": "EN",
+      "translationStatus": "MACHINE_ASSISTED",
+      "title": "Deposit insurance in Sri Lanka",
+      "summary": "The Sri Lanka Deposit Insurance Scheme protects deposits up to Rs. 1,100,000 per depositor, per institution, if a member institution fails.",
+      "body": "The Sri Lanka Deposit Insurance Scheme (SLDIS) protects depositors …",
+      "keywords": [
+        "deposit insurance",
+        "sldis",
+        "deposits",
+        "compensation",
+        "bank",
+        "finance company"
+      ],
+      "source": {
+        "publisher": "Central Bank of Sri Lanka",
+        "title": "Sri Lanka Deposit Insurance Scheme",
+        "url": "https://www.cbsl.gov.lk/en/sri-lanka-deposit-insurance-scheme",
+        "type": "OFFICIAL_REGULATOR",
+        "section": "Sri Lanka Deposit Insurance Scheme: coverage and member institutions",
+        "lastVerifiedAt": "2026-09-26T08:00:00.000Z"
+      },
+      "review": {
+        "isTimeSensitive": true,
+        "reviewRequired": false,
+        "lastReviewedAt": "2026-09-26T08:00:00.000Z"
+      }
+    }
+  ],
+  "meta": { "page": 1, "limit": 20, "total": 1, "totalPages": 1 }
+}
+```
+
+The `body` is plain text: paragraphs are separated by blank lines, and list items start with `- `.
+
+### `GET /knowledge/articles/:slug`
+
+Returns one published article in the same shape, for example `GET /knowledge/articles/protect-pin-otp-passwords?language=SI`.
+
+- The only query parameter is `language` (default `EN`).
+- A malformed slug (not lower-case kebab-case) returns `400`.
+- An unknown, draft or archived slug returns `404` with `"Knowledge article not found"`.
 
 ## Errors
 

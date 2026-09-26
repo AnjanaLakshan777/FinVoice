@@ -17,7 +17,8 @@
     "db:migrate": "prisma migrate deploy",
     "db:migrate:create": "prisma migrate dev --create-only",
     "db:migrate:status": "prisma migrate status",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "db:seed:knowledge": "tsx --env-file-if-exists=../../.env prisma/seed-knowledge.ts"
   },
   "dependencies": {
     "@finvoice/config": "workspace:*",

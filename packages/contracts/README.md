@@ -14,6 +14,7 @@ The single source of truth for the shapes of data that cross a service boundary:
 | `src/financial-profiles.ts` | Financial profile request schema and `FinancialProfileResponse`                                     |
 | `src/financial-goals.ts`    | Financial goal request/query schemas and `FinancialGoalResponse`                                    |
 | `src/calculations.ts`       | Loan, savings and budget calculation request schemas and response types                             |
+| `src/knowledge.ts`          | Knowledge query schemas and article, source, search and category response types                     |
 
 Request schemas are [zod](https://zod.dev) schemas. zod implements [Standard Schema](https://standardschema.dev), which NestJS uses to validate requests (`@Body({ schema })`). The same schemas can validate data on the client side before a request is sent, but the API always validates again: client-side checks are a convenience, never a guarantee.
 

@@ -18,7 +18,10 @@ describe("database migrations", () => {
       WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
       ORDER BY migration_name`;
 
-    expect(applied.map((row) => row.migration_name)).toContain("20260925180300_init_core_domain");
+    expect(applied.map((row) => row.migration_name)).toEqual([
+      "20260925180300_init_core_domain",
+      "20260926081151_knowledge_base",
+    ]);
 
     const status = runPrisma(["migrate", "status"], databaseUrl);
     expect(status.exitCode, status.stderr).toBe(0);
@@ -73,6 +76,49 @@ describe("database migrations", () => {
         "financial_goals_target_amount_positive_check",
         "financial_goals_current_amount_non_negative_check",
         "financial_goals_current_amount_within_target_check",
+      ].sort(),
+    );
+  });
+
+  it("creates only the intended knowledge base indexes and check constraints", async () => {
+    const indexes = await prisma.$queryRaw<{ name: string }[]>`
+      SELECT indexname AS name FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND tablename IN ('knowledge_sources', 'knowledge_articles', 'knowledge_article_translations')`;
+    const checks = await prisma.$queryRaw<{ name: string }[]>`
+      SELECT conname AS name FROM pg_constraint
+      WHERE contype = 'c'
+        AND conrelid IN ('knowledge_sources'::regclass, 'knowledge_articles'::regclass,
+                         'knowledge_article_translations'::regclass)`;
+
+    expect(indexes.map((row) => row.name).sort()).toEqual(
+      [
+        "knowledge_sources_pkey",
+        "knowledge_sources_url_key",
+        "knowledge_articles_pkey",
+        "knowledge_articles_slug_key",
+        "knowledge_articles_status_category_idx",
+        "knowledge_articles_source_id_idx",
+        "knowledge_article_translations_pkey",
+        "knowledge_article_translations_article_id_language_key",
+      ].sort(),
+    );
+    expect(checks.map((row) => row.name).sort()).toEqual(
+      [
+        "knowledge_sources_url_https_check",
+        "knowledge_sources_publisher_not_blank_check",
+        "knowledge_sources_title_not_blank_check",
+        "knowledge_sources_verified_after_retrieved_check",
+        "knowledge_sources_review_after_verification_check",
+        "knowledge_articles_slug_format_check",
+        "knowledge_articles_published_has_source_check",
+        "knowledge_articles_source_section_not_blank_check",
+        "knowledge_articles_time_sensitive_review_dates_check",
+        "knowledge_articles_review_order_check",
+        "knowledge_article_translations_title_not_blank_check",
+        "knowledge_article_translations_summary_not_blank_check",
+        "knowledge_article_translations_body_not_blank_check",
+        "knowledge_article_translations_keywords_not_null_check",
       ].sort(),
     );
   });
