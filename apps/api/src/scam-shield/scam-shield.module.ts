@@ -6,7 +6,8 @@ import { ScamShieldService } from "./scam-shield.service.js";
 
 /**
  * ScamShield API: the deterministic @finvoice/scam-shield engine plus knowledge-base enrichment.
- * Reads published knowledge only; stores nothing.
+ * Reads published knowledge only; persists no submitted content or analysis history (only a
+ * typed SCAM_ANALYSIS analytics event).
  */
 @Module({
   imports: [KnowledgeModule],

@@ -4,7 +4,7 @@ FinVoice is a voice-first financial inclusion and financial literacy platform fo
 
 ## Current status
 
-**Step 9: ScamShield.** This repository has:
+**Step 10: admin dashboard and analytics.** This repository has:
 
 - a pnpm monorepo with strict TypeScript, ESLint, Prettier, Vitest and CI;
 - a **web app** (Next.js) with a `/voice` page for real-time voice conversations;
@@ -13,7 +13,8 @@ FinVoice is a voice-first financial inclusion and financial literacy platform fo
 - a curated, source-backed **financial knowledge base** (12 articles based on Central Bank of Sri Lanka material, in English with some Sinhala and Tamil) with read-only retrieval under `/api/v1/knowledge`;
 - a text **AI agent** (Google Gemini, Interactions API) under `/api/v1/agent/chat` that answers from the knowledge base and calculates with the finance engine through validated, allowlisted tools;
 - a personal **financial context and financial-literacy** layer for trusted services, behind a token-protected internal API;
-- **ScamShield** under `/api/v1/scamshield/analyze`: a deterministic, source-grounded check of a message, call or offer for scam warning indicators (English, with partial Sinhala and Tamil coverage). It uses no AI, stores nothing and never says content is safe;
+- **ScamShield** under `/api/v1/scamshield/analyze`: a deterministic, source-grounded check of a message, call or offer for scam warning indicators (English, with partial Sinhala and Tamil coverage). It uses no AI, never stores the submitted content or an analysis history (only a typed, content-free analytics event), and never says content is safe;
+- privacy-safe **operational analytics** (usage, languages, latency, errors; no content, no user ids) with a temporary, **disabled-by-default** admin dashboard at `/admin`, reachable only through internal, token-protected endpoints;
 - a **PostgreSQL 18** schema managed by **Prisma migrations**: users, financial profiles and goals, and knowledge sources, articles and translations;
 - a **voice gateway** service (Node.js) that bridges the browser (WebSocket) and **Gemini Live** (native audio), with transcription, barge-in, session resumption and FinVoice tools run through the API, plus `GET /health`;
 - shared `shared`, `contracts`, `config`, `finance-engine` and `scam-shield` packages.
@@ -140,7 +141,7 @@ Invoke-RestMethod -Method Post "$api/agent/chat" -ContentType "application/json"
   -Body '{"message":"What is an emergency fund?","language":"EN"}'
 ```
 
-ScamShield checks a message for scam warning indicators. It needs no Gemini key and stores nothing. Use made-up text, never real personal data:
+ScamShield checks a message for scam warning indicators. It needs no Gemini key and never stores the submitted content (only a content-free `SCAM_ANALYSIS` analytics event). Use made-up text, never real personal data:
 
 ```powershell
 Invoke-RestMethod -Method Post "$api/scamshield/analyze" -ContentType "application/json" `
@@ -149,6 +150,28 @@ Invoke-RestMethod -Method Post "$api/scamshield/analyze" -ContentType "applicati
 ```
 
 The result lists warning indicators, not a verdict. It never says content is safe. See [docs/architecture/scam-shield.md](docs/architecture/scam-shield.md).
+
+### Admin dashboard (local development only)
+
+A temporary, aggregate-only analytics dashboard at http://localhost:3000/admin. There is **no authentication yet**, so it is **disabled by default** (a 404) and must only be enabled on your own machine or a trusted internal network. It shows counts, languages, latency, errors and the knowledge review queue, never messages, transcripts, amounts or personal details. See [docs/architecture/analytics.md](docs/architecture/analytics.md).
+
+1. Make sure your root `.env` has `INTERNAL_API_TOKEN` (see "Talking to FinVoice" below) and apply the migrations (`pnpm db:migrate`).
+2. Start the API: `pnpm dev:api`.
+3. Start the web app with the dashboard enabled for this run only:
+
+   ```powershell
+   $env:ADMIN_DASHBOARD_ENABLED = "true"; pnpm dev:web      # PowerShell
+   ```
+
+   ```sh
+   ADMIN_DASHBOARD_ENABLED=true pnpm dev:web                # bash
+   ```
+
+   The web **server** reads `INTERNAL_API_URL` (default `http://127.0.0.1:4000`) and `INTERNAL_API_TOKEN` from the root `.env` and calls the API's internal endpoints. The token never reaches the browser. Never put it in a `NEXT_PUBLIC_*` variable.
+
+4. Open http://localhost:3000/admin.
+
+Analytics events are kept for `ANALYTICS_RETENTION_DAYS` (default 90). `pnpm analytics:cleanup` deletes older ones and prints only a count.
 
 ### Talking to FinVoice (browser voice)
 
@@ -186,6 +209,7 @@ The schema lives in [apps/api/prisma/schema.prisma](apps/api/prisma/schema.prism
 | Show migration status                       | `pnpm db:migrate:status`                  |
 | Create a migration after editing the schema | `pnpm db:migrate:create --name <change>`  |
 | Load the curated knowledge base             | `pnpm db:seed:knowledge`                  |
+| Delete analytics older than the retention   | `pnpm analytics:cleanup`                  |
 | Load the fake development seed data         | `pnpm db:seed`                            |
 | Regenerate the Prisma client                | `pnpm --filter @finvoice/api db:generate` |
 
@@ -237,5 +261,6 @@ Environment variables are documented in [.env.example](.env.example) and validat
 - [Browser voice](docs/architecture/browser-voice.md): WebSocket protocol, audio formats, Gemini Live, interruption, tools, sessions and security
 - [Personal financial context](docs/architecture/personal-financial-context.md): the internal user-context API and literacy profile
 - [ScamShield](docs/architecture/scam-shield.md): deterministic scam warning indicators, sources, risk levels, privacy and governance
+- [Analytics and admin dashboard](docs/architecture/analytics.md): privacy-safe events, aggregation, retention, internal API and dashboard security
 - [API endpoints](docs/api/README.md) and the [domain API reference](docs/api/domain-api.md)
 - [ADR 0001: Repository foundation](docs/decisions/0001-repository-foundation.md): why the foundation looks the way it does

@@ -1139,3 +1139,81 @@ describe("secrets", () => {
     expect(logger.text()).not.toContain(FAKE_KEY);
   });
 });
+
+describe("session analytics", () => {
+  const ALLOWED_KEYS = [
+    "durationMs",
+    "errorCode",
+    "eventType",
+    "language",
+    "sessionId",
+    "source",
+    "success",
+  ];
+
+  it("reports one VOICE_SESSION event per finished session, with safe fields only", async () => {
+    const client = await started("SI");
+    client.send({ type: "audio", data: FRAME });
+    connector.latest.emit({ type: "input_transcript", text: "secret words" });
+    client.send({ type: "stop_session" });
+    await client.next("session_closed");
+
+    await waitFor(() => backend.analyticsEvents.length === 1);
+    const [event] = backend.analyticsEvents;
+    expect(event).toMatchObject({
+      eventType: "VOICE_SESSION",
+      source: "VOICE",
+      language: "SI",
+      success: true,
+    });
+    expect(event?.durationMs).toBeGreaterThanOrEqual(0);
+    expect(event?.sessionId).toMatch(/^[0-9a-f-]{36}$/u);
+    for (const key of Object.keys(event ?? {})) {
+      expect(ALLOWED_KEYS).toContain(key);
+    }
+    expect(JSON.stringify(event)).not.toMatch(/secret words|audio|transcript/iu);
+  });
+
+  it("reports a failed session with its controlled error code", async () => {
+    connector.before = () => Promise.reject(new LiveConnectError("unavailable", "timeout"));
+    const client = await open();
+    client.send({ type: "start_session", language: "TA" });
+    await client.next("session_closed");
+
+    await waitFor(() => backend.analyticsEvents.length === 1);
+    expect(backend.analyticsEvents[0]).toMatchObject({
+      eventType: "VOICE_SESSION",
+      language: "TA",
+      success: false,
+      errorCode: "VOICE_PROVIDER_UNAVAILABLE",
+    });
+  });
+
+  it("reports nothing for a connection that never started a session", async () => {
+    await startGatewayWithShortStart();
+    const client = await open();
+    await client.waitForClose();
+    await waitFor(() => gateway?.activeSessions() === 0);
+    expect(backend.analyticsEvents).toEqual([]);
+  });
+
+  it("keeps voice working when analytics recording fails", async () => {
+    backend.analytics = () =>
+      Promise.reject(new VoiceBackendError("unavailable", "The FinVoice API could not be reached"));
+    const client = await started();
+    client.send({ type: "stop_session" });
+    await client.next("session_closed");
+    expect(await client.waitForClose()).toBe(1000);
+
+    await waitFor(() => logger.events().includes("analytics recording failed"));
+    // A second session still works normally.
+    const next = await started("EN");
+    next.send({ type: "stop_session" });
+    await next.next("session_closed");
+  });
+});
+
+async function startGatewayWithShortStart(): Promise<void> {
+  await gateway?.close();
+  await startGateway({ sessionLimits: { startTimeoutMs: 50 } });
+}

@@ -310,3 +310,130 @@ model FinancialLiteracyTopicProgress {
   @@unique([userId, topic])
   @@map("financial_literacy_topic_progress")
 }
+
+// ---------------------------------------------------------------------------------------------
+// Analytics (Step 10). See docs/architecture/analytics.md.
+//
+// Operational metadata only: which kind of operation happened, in which language and category,
+// whether it worked and how long it took. There is deliberately no user id, no free-text field and
+// no JSON metadata column, so content (messages, transcripts, amounts, credentials, ScamShield
+// content, search queries, tool arguments or results) cannot be stored even by mistake.
+// ---------------------------------------------------------------------------------------------
+
+/// One kind of operational occurrence each.
+enum AnalyticsEventType {
+  AGENT_REQUEST
+  AGENT_TOOL_CALL
+  VOICE_SESSION
+  VOICE_TOOL_CALL
+  KNOWLEDGE_SEARCH
+  KNOWLEDGE_ARTICLE_VIEW
+  SCAM_ANALYSIS
+  LITERACY_TOPIC_STARTED
+  LITERACY_TOPIC_COMPLETED
+  CALCULATION
+
+  @@map("analytics_event_type")
+}
+
+/// The channel the operation came through.
+enum AnalyticsEventSource {
+  WEB
+  VOICE
+  API
+  INTERNAL
+
+  @@map("analytics_event_source")
+}
+
+/// The tool or calculator used: names only, never arguments or results.
+enum AnalyticsToolName {
+  search_knowledge
+  get_knowledge_article
+  calculate_loan
+  calculate_savings
+  calculate_budget
+  get_user_financial_context
+  get_user_literacy_context
+
+  @@map("analytics_tool_name")
+}
+
+/// ScamShield's final indicator-based risk level (no content, no evidence).
+enum ScamRiskLevel {
+  INSUFFICIENT_INFORMATION
+  LOW
+  MEDIUM
+  HIGH
+
+  @@map("scam_risk_level")
+}
+
+/// The kind of content the user said they checked with ScamShield.
+enum ScamSourceType {
+  MESSAGE
+  EMAIL
+  CALL
+  SOCIAL_MEDIA
+  WEBSITE
+  OFFER
+  UNKNOWN
+
+  @@map("scam_source_type")
+}
+
+/// Controlled failure codes: never free-text messages, stack traces or provider errors.
+enum AnalyticsErrorCode {
+  VALIDATION_ERROR
+  BAD_REQUEST
+  NOT_FOUND
+  CONFLICT
+  PAYLOAD_TOO_LARGE
+  UNSUPPORTED_MEDIA_TYPE
+  METHOD_NOT_ALLOWED
+  UNAUTHORIZED
+  BAD_GATEWAY
+  SERVICE_UNAVAILABLE
+  INTERNAL_ERROR
+  VOICE_CONFIG_ERROR
+  VOICE_PROVIDER_UNAVAILABLE
+  VOICE_SESSION_ERROR
+  VOICE_INVALID_MESSAGE
+  VOICE_TOOL_ERROR
+  VOICE_LIMIT_REACHED
+  UNKNOWN_TOOL
+  INVALID_ARGUMENTS
+  TOOL_FAILED
+  TOOL_LIMIT_REACHED
+
+  @@map("analytics_error_code")
+}
+
+/// One operational event. occurredAt is set by the API (UTC). Deleted after the retention period
+/// by `pnpm analytics:cleanup`. Which optional field may be set for which event type is enforced
+/// by CHECK constraints (see the migration).
+model AnalyticsEvent {
+  id                String               @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  eventType         AnalyticsEventType   @map("event_type")
+  source            AnalyticsEventSource
+  occurredAt        DateTime             @map("occurred_at") @db.Timestamptz(3)
+  language          Language?
+  knowledgeCategory KnowledgeCategory?   @map("knowledge_category")
+  toolName          AnalyticsToolName?   @map("tool_name")
+  scamRiskLevel     ScamRiskLevel?       @map("scam_risk_level")
+  scamSourceType    ScamSourceType?      @map("scam_source_type")
+  success           Boolean
+  /// Integer milliseconds, 0 to 24 hours.
+  durationMs        Int?                 @map("duration_ms")
+  errorCode         AnalyticsErrorCode?  @map("error_code")
+  /// A random voice-session id from the gateway: not derived from any identity, never shown.
+  sessionId         String?              @map("session_id") @db.Uuid
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  // Every dashboard query filters a date range: range scans over all events (overview, languages,
+  // health, retention cleanup) ...
+  @@index([occurredAt])
+  // ... and range scans of one event type (trends and the per-feature sections).
+  @@index([eventType, occurredAt])
+  @@map("analytics_events")
+}

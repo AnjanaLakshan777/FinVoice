@@ -14,3 +14,4 @@ export * from "./voice.js";
 export * from "./literacy.js";
 export * from "./financial-context.js";
 export * from "./scam-shield.js";
+export * from "./analytics.js";

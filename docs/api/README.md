@@ -32,7 +32,10 @@ Users, financial profiles, financial goals, financial calculations, financial-li
 
 Health checks are not versioned and stay at the root, for load balancers and orchestrators.
 
-The token-protected internal endpoints used by the voice gateway (`/internal/voice/session-setup`, `/internal/voice/tools/execute`) are documented in [domain-api.md](domain-api.md#internal-voice-endpoints-not-part-of-apiv1).
+The token-protected internal endpoints are documented in domain-api.md:
+
+- the voice gateway's (`/internal/voice/session-setup`, `/internal/voice/tools/execute`) under [Internal voice endpoints](domain-api.md#internal-voice-endpoints-not-part-of-apiv1);
+- analytics ingestion and the admin aggregates (`/internal/analytics/events`, `/internal/admin/analytics/*`) under [Internal analytics endpoints](domain-api.md#internal-analytics-endpoints-internal-not-part-of-apiv1).
 
 ### `GET /health`
 

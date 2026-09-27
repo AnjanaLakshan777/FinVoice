@@ -71,3 +71,13 @@ export const geminiModelSchema = z
   .regex(/^[a-z0-9][a-z0-9.-]{0,99}$/, {
     error: 'Must be a Gemini model name, e.g. "gemini-3.8-flash"',
   });
+
+/** An http(s) base URL, without trailing slashes. */
+export const httpUrlSchema = z
+  .url({ protocol: /^https?$/, error: "Must be an http:// or https:// URL" })
+  .transform((value) => value.replace(/\/+$/, ""));
+
+/** A "true"/"false" switch. Anything else is rejected rather than guessed. */
+export const booleanFlagSchema = z
+  .enum(["true", "false"], { error: "Must be true or false" })
+  .transform((value) => value === "true");

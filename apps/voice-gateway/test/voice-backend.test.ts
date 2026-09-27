@@ -45,6 +45,26 @@ describe("HttpVoiceBackend", () => {
     expect(init?.body).toBe(JSON.stringify(request));
   });
 
+  it("posts analytics events to the internal ingestion endpoint with the internal token", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(() => Promise.resolve(json(202, { status: "accepted" })));
+    const event = {
+      eventType: "VOICE_SESSION" as const,
+      source: "VOICE" as const,
+      language: "SI" as const,
+      success: true,
+      durationMs: 42_000,
+      sessionId: "0190f0a0-0000-7000-8000-000000000001",
+    };
+
+    await backend(fetchImpl).recordAnalyticsEvent(event);
+
+    const [url, init] = fetchImpl.mock.calls[0] ?? [];
+    expect(url).toBe("http://api.test/internal/analytics/events");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBe(JSON.stringify(event));
+    expect((init?.headers as Record<string, string>)["x-finvoice-internal-token"]).toBe(TOKEN);
+  });
+
   it("fails as not_configured without a token, without calling the API", async () => {
     const fetchImpl = vi.fn<typeof fetch>();
     await expect(backend(fetchImpl, null).getSessionSetup("EN")).rejects.toMatchObject({

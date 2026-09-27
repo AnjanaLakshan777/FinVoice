@@ -19,6 +19,10 @@ import {
 
 import { knowledgeArticles } from "../../prisma/knowledge/content.js";
 import { seedKnowledge } from "../../prisma/knowledge/seed-knowledge.js";
+import {
+  AnalyticsRecorder,
+  type PrismaAnalyticsRecorder,
+} from "../../src/analytics/analytics-recorder.js";
 import { KnowledgeService } from "../../src/knowledge/knowledge.service.js";
 import { answer, FakeLanguageModel } from "../support/fake-language-model.js";
 import { startTestApi, type TestApi } from "./api-app.js";
@@ -453,14 +457,32 @@ describe("privacy", () => {
     logger.lines.length = 0;
   });
 
-  it("41. stores nothing: no database write, and the content is in no table", async () => {
+  it("41. stores no content: only one typed analytics event, and the content is in no table", async () => {
     const response = await message(MARKED_SCAM);
     expect(response.status).toBe(200);
     // The evidence (returned to this request only) contains the marker…
     expect(response.text).toContain(MARKER);
+    await (api.get(AnalyticsRecorder) as PrismaAnalyticsRecorder).flush();
 
-    // …but no statement wrote to any table…
-    expect(await api.prisma.$queryRawUnsafe(`SELECT * FROM ${AUDIT}`)).toEqual([]);
+    // …the only write is one operational analytics event (Step 10): typed fields, no content…
+    expect(await api.prisma.$queryRawUnsafe(`SELECT * FROM ${AUDIT}`)).toEqual([
+      { table_name: "analytics_events", operation: "INSERT" },
+    ]);
+    const events = await api.prisma.analyticsEvent.findMany();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      eventType: "SCAM_ANALYSIS",
+      source: "API",
+      language: "EN",
+      scamSourceType: "MESSAGE",
+      scamRiskLevel: "HIGH",
+      success: true,
+      toolName: null,
+      knowledgeCategory: null,
+      sessionId: null,
+      errorCode: null,
+    });
+    expect(typeof events[0]?.durationMs).toBe("number");
     // …and the marker is stored nowhere.
     for (const table of await publicTables()) {
       const [row] = await api.prisma.$queryRawUnsafe<{ count: bigint }[]>(
@@ -469,6 +491,9 @@ describe("privacy", () => {
       );
       expect(Number(row?.count), table).toBe(0);
     }
+
+    await api.prisma.analyticsEvent.deleteMany();
+    await api.prisma.$executeRawUnsafe(`DELETE FROM ${AUDIT}`);
 
     // Control: the audit does record writes made through the application's client.
     await api.prisma.user.create({

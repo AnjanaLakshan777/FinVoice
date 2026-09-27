@@ -1,5 +1,6 @@
 import type {
   AgentLanguage,
+  AnalyticsEventRequest,
   VoiceSessionSetupResponse,
   VoiceToolExecutionRequest,
   VoiceToolExecutionResponse,
@@ -58,6 +59,15 @@ export class FakeVoiceBackend implements VoiceBackend {
   executeTool(request: VoiceToolExecutionRequest): Promise<VoiceToolExecutionResponse> {
     this.toolRequests.push(request);
     return this.tool(request);
+  }
+
+  readonly analyticsEvents: AnalyticsEventRequest[] = [];
+
+  analytics: (event: AnalyticsEventRequest) => Promise<void> = () => Promise.resolve();
+
+  recordAnalyticsEvent(event: AnalyticsEventRequest): Promise<void> {
+    this.analyticsEvents.push(event);
+    return this.analytics(event);
   }
 }
 

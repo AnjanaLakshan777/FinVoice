@@ -76,3 +76,13 @@ export type FinancialContextResponse = {
   };
   completeness: FinancialContextCompleteness;
 };
+
+/**
+ * Tools for a future authenticated agent to read the signed-in user's own context (Step 8). They
+ * are not on the public agent's allowlist (AGENT_TOOL_NAMES).
+ */
+export const USER_CONTEXT_TOOL_NAMES = [
+  "get_user_financial_context",
+  "get_user_literacy_context",
+] as const;
+export type UserContextToolName = (typeof USER_CONTEXT_TOOL_NAMES)[number];

@@ -5,7 +5,14 @@ export {
   type NodeEnv,
   type RawEnv,
 } from "./env.js";
-export { DEFAULT_GEMINI_MODEL, loadApiConfig, type ApiConfig } from "./api.js";
+export {
+  DEFAULT_ANALYTICS_RETENTION_DAYS,
+  DEFAULT_GEMINI_MODEL,
+  loadApiConfig,
+  MAX_ANALYTICS_RETENTION_DAYS,
+  type ApiConfig,
+} from "./api.js";
+export { loadAdminDashboardConfig, type AdminDashboardConfig } from "./admin-dashboard.js";
 export { loadDatabaseConfig, type DatabaseConfig } from "./database.js";
 export {
   DEFAULT_GEMINI_LIVE_MODEL,

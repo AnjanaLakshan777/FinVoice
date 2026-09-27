@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 
 import { AgentModule } from "./ai/agent/agent.module.js";
+import { AnalyticsRecorderModule } from "./analytics/analytics-recorder.module.js";
+import { AnalyticsModule } from "./analytics/analytics.module.js";
 import { VoiceInternalModule } from "./ai/voice/voice-internal.module.js";
 import { FinancialContextModule } from "./financial-context/financial-context.module.js";
 import { CalculationsModule } from "./calculations/calculations.module.js";
@@ -17,6 +19,7 @@ import { UsersModule } from "./users/users.module.js";
   imports: [
     ApiConfigModule,
     DatabaseModule,
+    AnalyticsRecorderModule,
     HealthModule,
     UsersModule,
     FinancialProfilesModule,
@@ -27,6 +30,7 @@ import { UsersModule } from "./users/users.module.js";
     VoiceInternalModule,
     FinancialContextModule,
     ScamShieldModule,
+    AnalyticsModule,
   ],
 })
 export class AppModule {}

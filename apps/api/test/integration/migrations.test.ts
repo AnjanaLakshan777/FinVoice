@@ -24,6 +24,7 @@ describe("database migrations", () => {
       "20260927120000_financial_literacy",
       "20260927200000_knowledge_fcrd_hotline",
       "20260927210000_knowledge_fcrd_hotline_summary",
+      "20260927220000_analytics_events",
     ]);
 
     const status = runPrisma(["migrate", "status"], databaseUrl);
@@ -184,6 +185,56 @@ describe("database migrations", () => {
     expect(enums).toEqual([
       { name: "financial_literacy_level", values: "BEGINNER,DEVELOPING,CONFIDENT" },
       { name: "financial_literacy_topic_status", values: "NOT_STARTED,IN_PROGRESS,COMPLETED" },
+    ]);
+  });
+
+  it("creates the analytics table with only the intended constraints, indexes and columns", async () => {
+    const constraints = await prisma.$queryRaw<{ name: string }[]>`
+      SELECT conname AS name FROM pg_constraint
+      WHERE conrelid = 'analytics_events'::regclass AND contype IN ('p', 'f', 'c')`;
+    const indexes = await prisma.$queryRaw<{ name: string }[]>`
+      SELECT indexname AS name FROM pg_indexes
+      WHERE schemaname = 'public' AND tablename = 'analytics_events'`;
+    const columns = await prisma.$queryRaw<{ name: string; type: string }[]>`
+      SELECT column_name AS name, udt_name AS type FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'analytics_events'
+      ORDER BY column_name`;
+
+    expect(constraints.map((row) => row.name).sort()).toEqual(
+      [
+        "analytics_events_pkey",
+        "analytics_events_duration_range_check",
+        "analytics_events_error_only_on_failure_check",
+        "analytics_events_scam_fields_check",
+        "analytics_events_tool_name_check",
+        "analytics_events_knowledge_category_check",
+        "analytics_events_session_id_check",
+      ].sort(),
+    );
+    // No foreign key: analytics rows are not linked to users or any other table.
+    expect(indexes.map((row) => row.name).sort()).toEqual(
+      [
+        "analytics_events_pkey",
+        "analytics_events_occurred_at_idx",
+        "analytics_events_event_type_occurred_at_idx",
+      ].sort(),
+    );
+    // Explicit, typed fields only: no user id, no text, no JSON metadata.
+    expect(columns).toEqual([
+      { name: "created_at", type: "timestamptz" },
+      { name: "duration_ms", type: "int4" },
+      { name: "error_code", type: "analytics_error_code" },
+      { name: "event_type", type: "analytics_event_type" },
+      { name: "id", type: "uuid" },
+      { name: "knowledge_category", type: "knowledge_category" },
+      { name: "language", type: "language" },
+      { name: "occurred_at", type: "timestamptz" },
+      { name: "scam_risk_level", type: "scam_risk_level" },
+      { name: "scam_source_type", type: "scam_source_type" },
+      { name: "session_id", type: "uuid" },
+      { name: "source", type: "analytics_event_source" },
+      { name: "success", type: "bool" },
+      { name: "tool_name", type: "analytics_tool_name" },
     ]);
   });
 

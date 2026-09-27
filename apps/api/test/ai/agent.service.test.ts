@@ -19,6 +19,7 @@ import {
   toolsThenAnswer,
   type FakeScript,
 } from "../support/fake-language-model.js";
+import { InMemoryAnalyticsRecorder } from "../support/analytics.js";
 
 const knowledge = {
   list: (query: ListKnowledgeArticlesQuery) =>
@@ -29,9 +30,11 @@ const knowledge = {
   get: () => Promise.reject(ApiException.notFound("Knowledge article not found")),
 } as unknown as KnowledgeService;
 
+const analytics = new InMemoryAnalyticsRecorder();
+
 function createAgent(script: FakeScript) {
   const model = new FakeLanguageModel(script);
-  return { model, agent: new AgentService(model, new AgentToolRegistry(knowledge)) };
+  return { model, agent: new AgentService(model, new AgentToolRegistry(knowledge), analytics) };
 }
 
 const LOAN = { principal: "500000.00", annualInterestRate: "12.00", termMonths: 36 };

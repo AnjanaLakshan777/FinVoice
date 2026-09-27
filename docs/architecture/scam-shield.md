@@ -245,14 +245,18 @@ The content may contain names, phone numbers, account and card numbers, links, O
 - **Redaction exists as a safety net.** `redactSensitiveText` (in the package) redacts e-mail addresses, web addresses, labelled secrets ("password: …", "OTP is …"), card-like numbers, phone numbers and OTP-like codes, for text that reaches a log unexpectedly. It is **not** permission to log content: the rule remains "do not log user content".
 - **Tests prove this as behaviour.** A capturing logger and stdout/stderr spies must show no content, including on a failing request.
 
-## 13. No storage
+## 13. No content storage
 
-There is no scam-analysis table, no message table and no history. Step 9 added no migration and no table. Integration tests install statement-level audit triggers on **every** table and check two things:
+**ScamShield does not persist user-submitted content or analysis history. It may emit a privacy-safe SCAM_ANALYSIS analytics event containing only typed operational metadata.**
 
-- an analysis causes **no** INSERT, UPDATE, DELETE or TRUNCATE;
-- a unique marker from the content appears in no row.
+- **Not persisted:** there is no scam-analysis table, no message table and no analysis history. The submitted content, the evidence, extracted phrases, URLs, phone numbers, card data, user ids and search queries are never stored.
+- **The analytics event (Step 10):** each analysis records one `SCAM_ANALYSIS` row in `analytics_events`. It holds only typed operational metadata: the final risk level, language, selected content type, success, duration and the event time. The table has no free-text or JSON column and no user id, so the event cannot carry content, and it cannot be linked to a person or to other analyses. It is kept separate from business data (no foreign keys) and deleted after the analytics retention period. See [analytics.md](analytics.md).
+- **Tests prove this as behaviour.** Integration tests install statement-level audit triggers on **every** table and check that an analysis:
+  - writes nothing to any business table (users, profiles, goals, knowledge, literacy);
+  - writes exactly one INSERT, into `analytics_events`, with the expected typed fields;
+  - leaves a unique marker from the content in no row of any table, including `analytics_events`.
 
-As a control, the test also checks that the audit does record a real write.
+  As a control, the test also checks that the audit does record a real write.
 
 ## 14. No external APIs
 

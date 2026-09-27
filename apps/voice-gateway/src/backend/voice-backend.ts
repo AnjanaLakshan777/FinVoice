@@ -1,6 +1,7 @@
 import {
   INTERNAL_TOKEN_HEADER,
   type AgentLanguage,
+  type AnalyticsEventRequest,
   type VoiceSessionSetupResponse,
   type VoiceToolExecutionRequest,
   type VoiceToolExecutionResponse,
@@ -14,6 +15,11 @@ import {
 export type VoiceBackend = {
   getSessionSetup(language: AgentLanguage): Promise<VoiceSessionSetupResponse>;
   executeTool(request: VoiceToolExecutionRequest): Promise<VoiceToolExecutionResponse>;
+  /**
+   * Sends one privacy-safe analytics event (a finished voice session: language, duration, outcome;
+   * never audio, transcripts or tool data). Callers must not await it on the voice path.
+   */
+  recordAnalyticsEvent(event: AnalyticsEventRequest): Promise<void>;
 };
 
 export type VoiceBackendFailure =
@@ -59,6 +65,10 @@ export class HttpVoiceBackend implements VoiceBackend {
 
   executeTool(request: VoiceToolExecutionRequest): Promise<VoiceToolExecutionResponse> {
     return this.call<VoiceToolExecutionResponse>("POST", "/internal/voice/tools/execute", request);
+  }
+
+  async recordAnalyticsEvent(event: AnalyticsEventRequest): Promise<void> {
+    await this.call<unknown>("POST", "/internal/analytics/events", event);
   }
 
   private async call<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {

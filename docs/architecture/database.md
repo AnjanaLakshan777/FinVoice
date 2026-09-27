@@ -31,7 +31,7 @@ users 1 ──── 0..1 financial_literacy_profiles        (user_id UNIQUE)
 users 1 ──── 0..N financial_literacy_topic_progress  (UNIQUE (user_id, topic))
 ```
 
-All four foreign keys are `ON DELETE CASCADE ON UPDATE RESTRICT`. The literacy tables (Step 8) are described in [personal-financial-context.md](personal-financial-context.md).
+All four foreign keys are `ON DELETE CASCADE ON UPDATE RESTRICT`. The literacy tables (Step 8) are described in [personal-financial-context.md](personal-financial-context.md). The analytics table (Step 10, [below](#analytics_events)) is deliberately linked to nothing.
 
 - A profile or goal has no meaning without its user. Deleting a user is reserved for deliberate erasure of their personal data (as Sri Lanka's Personal Data Protection Act allows), and cascading makes that erasure complete.
 - In normal operation a user is deactivated (`status = INACTIVE`), not deleted.
@@ -142,6 +142,17 @@ Prisma's schema language cannot express CHECK constraints, so they are written b
 
 The database is the last line of defence, not the only one. The domain API validates the same rules first, so clients get clear validation errors instead of constraint violations.
 
+### `analytics_events`
+
+Privacy-safe operational analytics (Step 10). Design: [analytics.md](analytics.md).
+
+- **Purpose:** one row per operational occurrence, such as an agent request, a voice session, a calculation, a ScamShield analysis, a knowledge search or a literacy topic started. It feeds the aggregate, internal admin dashboard.
+- **Typed columns only:** every column is an enum, boolean, bounded integer or UUID. CHECK constraints ensure each optional field appears only on the event types it belongs to (ScamShield fields, tool names, categories, the voice session id), an error code only on a failure, and durations from 0 to 24 hours.
+- **No `user_id`:** analytics are aggregate operational data, so no row can be linked to a person or used to build a profile. A user-level audit trail would be a separate design with its own review.
+- **No JSON `metadata` column:** an unrestricted JSON field would make it easy to store messages, transcripts, amounts, credentials, ScamShield content or tool arguments by accident. Explicit typed columns make that impossible.
+- **Retention:** rows are deleted after `ANALYTICS_RETENTION_DAYS` (default 90) by `pnpm analytics:cleanup`, which touches only this table. Nothing is deleted at startup.
+- **Timestamps:** `occurred_at` is set by the API in UTC. Dashboard days are grouped in Asia/Colombo.
+
 ## Indexing strategy
 
 Every index has a named query behind it. Indexes are not added speculatively: each one costs write time and storage.
@@ -155,6 +166,8 @@ Every index has a named query behind it. Indexes are not added speculatively: ea
 | `financial_goals_status_target_date_idx`                       | `status, target_date`          | **Active goals due soon, across all users** (for example reminders and follow-ups)                                                                                            |
 | `financial_literacy_profiles_user_id_key` (unique)             | `user_id`                      | Load a user's literacy profile; enforces one per user; indexes the FK                                                                                                         |
 | `financial_literacy_topic_progress_user_id_topic_key` (unique) | `user_id, topic`               | Load one topic's progress; enforces one row per user and topic; its leading column also serves **all progress of a user** and the FK, so there is no separate `user_id` index |
+| `analytics_events_occurred_at_idx`                             | `occurred_at`                  | **Every dashboard query over a date range across all event types** (overview, languages, health) and the **retention cleanup** (`occurred_at < cutoff`)                       |
+| `analytics_events_event_type_occurred_at_idx`                  | `event_type, occurred_at`      | **One feature over a date range**: trends and the ScamShield, knowledge, literacy and tool sections                                                                           |
 
 The requirement for indexes on `financial_goals.user_id`, `status` and `target_date` is met by these two composite indexes rather than three single-column ones:
 
@@ -163,6 +176,8 @@ The requirement for indexes on `financial_goals.user_id`, `status` and `target_d
 - A stand-alone `target_date` index serves no query that is not better served, filtered by status, by the second composite index.
 
 Revisit these indexes when real query patterns exist (`pg_stat_user_indexes`, `EXPLAIN ANALYZE`).
+
+For `analytics_events`, the language, category and risk-level breakdowns filter by date range (and event type) first and then group the rows in that range, so the two range indexes serve them. Separate `(language, occurred_at)`, `(knowledge_category, occurred_at)` and `(scam_risk_level, occurred_at)` indexes would only pay off for queries that filter on one language, category or level, which no endpoint does. Add them if such queries appear.
 
 ## Migration strategy
 

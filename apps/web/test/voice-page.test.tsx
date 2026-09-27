@@ -504,7 +504,12 @@ describe("secrets stay on the server", () => {
         variables.every((name) => name === "NODE_ENV" || name?.startsWith("NEXT_PUBLIC_")),
         file,
       ).toBe(true);
-      expect(text, file).not.toMatch(/GEMINI_API_KEY|INTERNAL_API_TOKEN|x-finvoice-internal-token/);
+      expect(text, file).not.toMatch(/GEMINI_API_KEY/);
+      // The server-only admin dashboard (Step 10) uses the internal token in server code; its
+      // isolation from the browser is tested in admin-page.test.tsx. Nothing else may use it.
+      if (!/[\\/](app|lib)[\\/]admin[\\/]/.test(file)) {
+        expect(text, file).not.toMatch(/INTERNAL_API_TOKEN|x-finvoice-internal-token/);
+      }
     }
   });
 });

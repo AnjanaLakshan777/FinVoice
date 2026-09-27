@@ -1,3 +1,4 @@
+import { USER_CONTEXT_TOOL_NAMES, type UserContextToolName } from "@finvoice/contracts";
 import { Injectable, Logger } from "@nestjs/common";
 
 import { ApiException } from "../../common/api.exception.js";
@@ -15,11 +16,8 @@ import { TrustedUserContext } from "./trusted-user-context.js";
  * never choose whose data is read. Results contain no ids, phone numbers or credentials, and money
  * stays exact decimal strings.
  */
-export const USER_CONTEXT_TOOL_NAMES = [
-  "get_user_financial_context",
-  "get_user_literacy_context",
-] as const;
-export type UserContextToolName = (typeof USER_CONTEXT_TOOL_NAMES)[number];
+// The names are defined once in @finvoice/contracts (analytics reuses them).
+export { USER_CONTEXT_TOOL_NAMES, type UserContextToolName };
 
 /** Sent with every result, so the boundary travels with the data. */
 export const USER_CONTEXT_GUIDANCE =

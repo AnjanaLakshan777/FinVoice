@@ -13,6 +13,7 @@ import {
   toolsThenAnswer,
   type FakeScript,
 } from "../support/fake-language-model.js";
+import { InMemoryAnalyticsRecorder } from "../support/analytics.js";
 
 // These tests check the policy FinVoice gives the model and the data it lets the model see. They
 // do not try to judge the model's natural-language answers, which would be brittle.
@@ -51,7 +52,11 @@ function createAgent(script: FakeScript, articles: KnowledgeArticleResponse[] = 
   } as unknown as KnowledgeService;
   const registry = new AgentToolRegistry(knowledge);
   const model = new FakeLanguageModel(script);
-  return { model, registry, agent: new AgentService(model, registry) };
+  return {
+    model,
+    registry,
+    agent: new AgentService(model, registry, new InMemoryAnalyticsRecorder()),
+  };
 }
 
 describe("knowledge-grounding rules in the system instruction", () => {

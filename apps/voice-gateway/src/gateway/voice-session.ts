@@ -1,5 +1,6 @@
 import {
   AGENT_TOOL_NAMES,
+  ANALYTICS_MAX_DURATION_MS,
   VOICE_OUTPUT_MIME_TYPE,
   type AgentLanguage,
   type AgentToolName,
@@ -220,6 +221,10 @@ export class VoiceSession {
   private windowStart = 0;
   private messagesInWindow = 0;
   private readonly openedAt = performance.now();
+  /** When start_session was received; null until then (no session to report). */
+  private sessionStartedAt: number | null = null;
+  /** The error that ended the session, if any (reported to analytics as a controlled code). */
+  private failureCode: VoiceErrorCode | null = null;
   private startTimer: NodeJS.Timeout | undefined;
   private readonly limits: VoiceSessionLimits;
 
@@ -306,6 +311,7 @@ export class VoiceSession {
   private async start(language: AgentLanguage): Promise<void> {
     this.stateValue = "STARTING_GEMINI";
     this.language = language;
+    this.sessionStartedAt = performance.now();
     clearTimeout(this.startTimer);
     const started = performance.now();
     this.log("info", "session_starting");
@@ -344,6 +350,7 @@ export class VoiceSession {
       return;
     }
     this.log("warn", "session_failed", { code });
+    this.failureCode = code;
     this.options.send({ type: "error", code, message });
     this.finish(closeCode, "session closed");
   }
@@ -373,6 +380,48 @@ export class VoiceSession {
       audioBytesOut: this.audio.bytesOut,
       ...this.metrics.totals(),
       ...this.stallCounters,
+    });
+    this.reportSession();
+  }
+
+  /**
+   * Sends one VOICE_SESSION analytics event for a session that was started: language, duration,
+   * outcome and the random connection id only. Never audio, transcripts, tool calls or anything
+   * about the user. Fire-and-forget: a failure is logged and never affects the voice path.
+   */
+  private reportSession(): void {
+    if (this.language === null || this.sessionStartedAt === null) {
+      return;
+    }
+    const durationMs = Math.min(
+      ANALYTICS_MAX_DURATION_MS,
+      Math.max(0, Math.round(performance.now() - this.sessionStartedAt)),
+    );
+    try {
+      this.options.backend
+        .recordAnalyticsEvent({
+          eventType: "VOICE_SESSION",
+          source: "VOICE",
+          language: this.language,
+          success: this.failureCode === null,
+          durationMs,
+          ...(this.failureCode === null ? {} : { errorCode: this.failureCode }),
+          sessionId: this.options.id,
+        })
+        .catch((error: unknown) => {
+          this.analyticsFailed(error);
+        });
+    } catch (error) {
+      this.analyticsFailed(error);
+    }
+  }
+
+  private analyticsFailed(error: unknown): void {
+    this.log("warn", "analytics recording failed", {
+      code: error instanceof VoiceBackendError ? error.failure : "unknown",
+      ...(error instanceof VoiceBackendError && error.status !== undefined
+        ? { httpStatus: error.status }
+        : {}),
     });
   }
 

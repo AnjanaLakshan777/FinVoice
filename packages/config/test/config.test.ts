@@ -4,6 +4,7 @@ import {
   ConfigValidationError,
   DEFAULT_GEMINI_LIVE_MODEL,
   DEFAULT_GEMINI_LIVE_VOICE,
+  loadAdminDashboardConfig,
   loadApiConfig,
   loadDatabaseConfig,
   loadVoiceGatewayConfig,
@@ -21,6 +22,7 @@ describe("loadApiConfig", () => {
       database: { url: DATABASE_URL },
       gemini: { apiKey: null, model: "gemini-3.8-flash" },
       internal: { token: null },
+      analytics: { retentionDays: 90 },
     });
   });
 
@@ -39,6 +41,7 @@ describe("loadApiConfig", () => {
       database: { url: DATABASE_URL },
       gemini: { apiKey: null, model: "gemini-3.8-flash" },
       internal: { token: null },
+      analytics: { retentionDays: 90 },
     });
   });
 
@@ -209,5 +212,62 @@ describe("loadVoiceGatewayConfig", () => {
 
   it("rejects an unknown NODE_ENV", () => {
     expect(() => loadVoiceGatewayConfig({ NODE_ENV: "staging" })).toThrow(ConfigValidationError);
+  });
+});
+
+describe("analytics retention", () => {
+  const DATABASE_URL = "postgresql://user:secret@localhost:5432/finvoice";
+
+  it("defaults to 90 days and accepts a configured value", () => {
+    expect(loadApiConfig({ DATABASE_URL }).analytics.retentionDays).toBe(90);
+    expect(
+      loadApiConfig({ DATABASE_URL, ANALYTICS_RETENTION_DAYS: "30" }).analytics.retentionDays,
+    ).toBe(30);
+  });
+
+  it.each(["0", "-5", "1.5", "abc", "3651"])("rejects ANALYTICS_RETENTION_DAYS=%s", (value) => {
+    expect(() => loadApiConfig({ DATABASE_URL, ANALYTICS_RETENTION_DAYS: value })).toThrow(
+      ConfigValidationError,
+    );
+  });
+});
+
+describe("loadAdminDashboardConfig", () => {
+  const TOKEN = "t".repeat(40);
+
+  it("is disabled by default, with the local API URL and no token", () => {
+    expect(loadAdminDashboardConfig({})).toEqual({
+      enabled: false,
+      internalApi: { url: "http://127.0.0.1:4000", token: null },
+    });
+  });
+
+  it("reads explicit settings", () => {
+    expect(
+      loadAdminDashboardConfig({
+        ADMIN_DASHBOARD_ENABLED: "true",
+        INTERNAL_API_URL: "http://api.internal:4000/",
+        INTERNAL_API_TOKEN: TOKEN,
+      }),
+    ).toEqual({ enabled: true, internalApi: { url: "http://api.internal:4000", token: TOKEN } });
+  });
+
+  it.each(["yes", "1", "TRUE", "on"])(
+    "rejects ADMIN_DASHBOARD_ENABLED=%s instead of guessing",
+    (value) => {
+      expect(() => loadAdminDashboardConfig({ ADMIN_DASHBOARD_ENABLED: value })).toThrow(
+        ConfigValidationError,
+      );
+    },
+  );
+
+  it("never echoes the token in validation errors", () => {
+    const short = "short-secret-value";
+    try {
+      loadAdminDashboardConfig({ INTERNAL_API_TOKEN: short });
+      expect.unreachable();
+    } catch (error) {
+      expect(String(error)).not.toContain(short);
+    }
   });
 });

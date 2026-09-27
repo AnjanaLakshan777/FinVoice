@@ -1,6 +1,6 @@
 # FinVoice system overview
 
-> **Status:** Step 9 (ScamShield). The repository structure, service skeletons, health endpoints, the core database tables, a validated REST API for users, financial profiles and goals ([domain-api.md](../api/domain-api.md)), a deterministic calculation engine for loans, savings and budgets ([financial-calculation-engine.md](financial-calculation-engine.md)), a curated, source-backed knowledge base with read-only retrieval ([financial-knowledge-base.md](financial-knowledge-base.md)), a text AI agent that uses them through allowlisted tools ([ai-agent.md](ai-agent.md)) a local/development real-time browser voice experience over Gemini Live ([browser-voice.md](browser-voice.md)), and a personal financial context and financial-literacy layer reachable only through a token-protected internal API ([personal-financial-context.md](personal-financial-context.md)), and ScamShield, a deterministic, source-grounded scam warning-indicator check that runs without Gemini ([scam-shield.md](scam-shield.md)), exist. Everything else in this document describes the **intended** architecture and will be built in later steps. The database design is documented in [database.md](database.md).
+> **Status:** Step 10 (admin dashboard and analytics). The repository structure, service skeletons, health endpoints, the core database tables, a validated REST API for users, financial profiles and goals ([domain-api.md](../api/domain-api.md)), a deterministic calculation engine for loans, savings and budgets ([financial-calculation-engine.md](financial-calculation-engine.md)), a curated, source-backed knowledge base with read-only retrieval ([financial-knowledge-base.md](financial-knowledge-base.md)), a text AI agent that uses them through allowlisted tools ([ai-agent.md](ai-agent.md)) a local/development real-time browser voice experience over Gemini Live ([browser-voice.md](browser-voice.md)), and a personal financial context and financial-literacy layer reachable only through a token-protected internal API ([personal-financial-context.md](personal-financial-context.md)), ScamShield, a deterministic, source-grounded scam warning-indicator check that runs without Gemini ([scam-shield.md](scam-shield.md)), and privacy-safe operational analytics with a temporary, disabled-by-default admin dashboard behind the internal token ([analytics.md](analytics.md)) exist. Everything else in this document describes the **intended** architecture and will be built in later steps. The database design is documented in [database.md](database.md).
 
 ## Purpose
 
@@ -84,23 +84,25 @@ Browser voice uses a WebSocket between the browser and the voice gateway. The ga
 
 ## Repository mapping
 
-| Path                             | Component                                                | Step 1 state                                        |
-| -------------------------------- | -------------------------------------------------------- | --------------------------------------------------- |
-| `apps/web`                       | Web application (Next.js)                                | Homepage and `/voice` page                          |
-| `apps/api`                       | Backend API (NestJS)                                     | Health + domain API `/api/v1`                       |
-| `apps/voice-gateway`             | Voice gateway (Node.js)                                  | `GET /health`, browser voice WebSocket `/voice`     |
-| `packages/shared`                | Framework-agnostic shared types and utilities            | `ServiceHealth` type                                |
-| `packages/contracts`             | API and tool contracts                                   | Domain API request schemas and response types       |
-| `packages/finance-engine`        | Deterministic financial calculations                     | Loan, savings and budget calculators                |
-| `packages/scam-shield`           | Deterministic scam warning-indicator engine (no AI)      | 16 indicator categories, EN/SI/TA patterns          |
-| `apps/api/src/scam-shield`       | ScamShield API: engine + knowledge enrichment            | `POST /api/v1/scamshield/analyze` (stores nothing)  |
-| `apps/api/prisma/knowledge`      | Curated knowledge content and insert-only seed           | 12 CBSL-sourced articles                            |
-| `apps/api/src/financial-context` | Personal financial context and literacy (internal only)  | `/internal/users/*` (token-protected)               |
-| `apps/api/src/ai`                | Text AI agent: Gemini adapter, tool registry, agent      | `POST /api/v1/agent/chat`, internal voice endpoints |
-| `packages/config`                | Environment parsing and validation                       | API and voice gateway loaders                       |
-| `docker-compose.yml`             | Local infrastructure                                     | PostgreSQL 18                                       |
-| `infrastructure/`                | Container, database and (later) telephony infrastructure | Placeholders                                        |
+| Path                             | Component                                                | Step 1 state                                                                  |
+| -------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `apps/web`                       | Web application (Next.js)                                | Homepage and `/voice` page                                                    |
+| `apps/api`                       | Backend API (NestJS)                                     | Health + domain API `/api/v1`                                                 |
+| `apps/voice-gateway`             | Voice gateway (Node.js)                                  | `GET /health`, browser voice WebSocket `/voice`                               |
+| `packages/shared`                | Framework-agnostic shared types and utilities            | `ServiceHealth` type                                                          |
+| `packages/contracts`             | API and tool contracts                                   | Domain API request schemas and response types                                 |
+| `packages/finance-engine`        | Deterministic financial calculations                     | Loan, savings and budget calculators                                          |
+| `packages/scam-shield`           | Deterministic scam warning-indicator engine (no AI)      | 16 indicator categories, EN/SI/TA patterns                                    |
+| `apps/api/src/scam-shield`       | ScamShield API: engine + knowledge enrichment            | `POST /api/v1/scamshield/analyze` (no content stored)                         |
+| `apps/api/src/analytics`         | Privacy-safe operational analytics (aggregates only)     | `/internal/analytics/events`, `/internal/admin/analytics/*` (token-protected) |
+| `apps/web/app/admin`             | Temporary admin dashboard (server-rendered)              | `/admin`, disabled unless `ADMIN_DASHBOARD_ENABLED=true`                      |
+| `apps/api/prisma/knowledge`      | Curated knowledge content and insert-only seed           | 12 CBSL-sourced articles                                                      |
+| `apps/api/src/financial-context` | Personal financial context and literacy (internal only)  | `/internal/users/*` (token-protected)                                         |
+| `apps/api/src/ai`                | Text AI agent: Gemini adapter, tool registry, agent      | `POST /api/v1/agent/chat`, internal voice endpoints                           |
+| `packages/config`                | Environment parsing and validation                       | API and voice gateway loaders                                                 |
+| `docker-compose.yml`             | Local infrastructure                                     | PostgreSQL 18                                                                 |
+| `infrastructure/`                | Container, database and (later) telephony infrastructure | Placeholders                                                                  |
 
 ## Not yet built
 
-In later steps: authentication and authorisation (which will enable personalised answers through the prepared user-context tools), Asterisk and SIP configuration, the AudioSocket server (reusing the Step 7 voice session and Gemini Live adapter), RAG over the knowledge base, knowledge administration, Gemini explanations of ScamShield results (the engine stays authoritative), rate limiting, and deployment.
+In later steps: authentication and authorisation (which will enable personalised answers through the prepared user-context tools, and replace the admin dashboard's temporary internal-token boundary), Asterisk and SIP configuration, the AudioSocket server (reusing the Step 7 voice session and Gemini Live adapter), RAG over the knowledge base, knowledge administration, Gemini explanations of ScamShield results (the engine stays authoritative), rate limiting, and deployment.

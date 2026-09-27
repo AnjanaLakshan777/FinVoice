@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   geminiModelSchema,
   hostSchema,
+  httpUrlSchema,
   internalApiTokenSchema,
   nodeEnvSchema,
   optionalSecretSchema,
@@ -50,10 +51,6 @@ const originListSchema = z
       .filter((origin) => origin !== ""),
   )
   .pipe(z.array(originSchema).min(1, { error: "Must list at least one origin" }));
-
-const httpUrlSchema = z
-  .url({ protocol: /^https?$/, error: "Must be an http:// or https:// URL" })
-  .transform((value) => value.replace(/\/+$/, ""));
 
 const voiceGatewayEnvSchema = z.object({
   NODE_ENV: nodeEnvSchema,

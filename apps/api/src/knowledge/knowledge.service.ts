@@ -1,16 +1,31 @@
 import type {
+  AnalyticsEventSource,
   KnowledgeArticleResponse,
   KnowledgeCategoriesResponse,
+  KnowledgeCategory,
   KnowledgeLanguage,
   KnowledgeSearchResponse,
   ListKnowledgeArticlesQuery,
 } from "@finvoice/contracts";
 import { Injectable } from "@nestjs/common";
 
+import { AnalyticsRecorder, elapsedMs, errorCodeOf } from "../analytics/analytics-recorder.js";
 import { ApiException } from "../common/api.exception.js";
 import { PrismaService } from "../database/prisma.service.js";
 import type { Prisma } from "../generated/prisma/client.js";
 import { CANONICAL_LANGUAGE, toKnowledgeArticleResponse } from "./knowledge.mapper.js";
+
+/** A published article's review data, for the admin review queue (no article text). */
+export type KnowledgeReviewItem = {
+  slug: string;
+  /** English title. */
+  title: string;
+  category: KnowledgeCategory;
+  isTimeSensitive: boolean;
+  nextReviewAt: Date | null;
+  /** Has a Sinhala or Tamil translation. */
+  translated: boolean;
+};
 
 /**
  * Read-only retrieval of published knowledge with deterministic PostgreSQL queries: exact filters,
@@ -18,9 +33,105 @@ import { CANONICAL_LANGUAGE, toKnowledgeArticleResponse } from "./knowledge.mapp
  */
 @Injectable()
 export class KnowledgeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly analytics: AnalyticsRecorder,
+  ) {}
 
-  async list(query: ListKnowledgeArticlesQuery): Promise<KnowledgeSearchResponse> {
+  /**
+   * Lists or searches published articles. With `source` (the public knowledge API), the search is
+   * counted as a KNOWLEDGE_SEARCH analytics event: language and category filter only, never the
+   * search text. Callers such as the agent's tools omit it: their use is counted as tool calls.
+   */
+  async list(
+    query: ListKnowledgeArticlesQuery,
+    source?: AnalyticsEventSource,
+  ): Promise<KnowledgeSearchResponse> {
+    const started = performance.now();
+    try {
+      const result = await this.search(query);
+      this.track(source, "KNOWLEDGE_SEARCH", query.language, query.category, started);
+      return result;
+    } catch (error) {
+      this.track(source, "KNOWLEDGE_SEARCH", query.language, query.category, started, error);
+      throw error;
+    }
+  }
+
+  /**
+   * A published article by slug. Drafts, archived and unknown slugs are indistinguishable (404).
+   * With `source`, the view is counted as a KNOWLEDGE_ARTICLE_VIEW event (language and category
+   * only, not the slug).
+   */
+  async get(
+    slug: string,
+    language: KnowledgeLanguage,
+    source?: AnalyticsEventSource,
+  ): Promise<KnowledgeArticleResponse> {
+    const started = performance.now();
+    try {
+      const article = await this.find(slug, language);
+      this.track(source, "KNOWLEDGE_ARTICLE_VIEW", language, article.category, started);
+      return article;
+    } catch (error) {
+      this.track(source, "KNOWLEDGE_ARTICLE_VIEW", language, undefined, started, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Every published article with its English title and review data, for the read-only review
+   * queue of the admin dashboard. The knowledge tables stay the single source of truth.
+   */
+  async reviewItems(): Promise<KnowledgeReviewItem[]> {
+    const articles = await this.prisma.knowledgeArticle.findMany({
+      where: publishedArticles({}),
+      select: {
+        slug: true,
+        category: true,
+        isTimeSensitive: true,
+        nextReviewAt: true,
+        translations: { select: { language: true, title: true } },
+      },
+      orderBy: { slug: "asc" },
+    });
+    return articles.map((article) => ({
+      slug: article.slug,
+      title:
+        article.translations.find((translation) => translation.language === CANONICAL_LANGUAGE)
+          ?.title ?? article.slug,
+      category: article.category,
+      isTimeSensitive: article.isTimeSensitive,
+      nextReviewAt: article.nextReviewAt,
+      translated: article.translations.some(
+        (translation) => translation.language !== CANONICAL_LANGUAGE,
+      ),
+    }));
+  }
+
+  private track(
+    source: AnalyticsEventSource | undefined,
+    eventType: "KNOWLEDGE_SEARCH" | "KNOWLEDGE_ARTICLE_VIEW",
+    language: KnowledgeLanguage,
+    category: KnowledgeCategory | undefined,
+    started: number,
+    error?: unknown,
+  ): void {
+    if (source === undefined) {
+      return;
+    }
+    this.analytics.record({
+      eventType,
+      source,
+      language,
+      ...(category === undefined ? {} : { knowledgeCategory: category }),
+      success: error === undefined,
+      durationMs: elapsedMs(started),
+      ...(error === undefined ? {} : { errorCode: errorCodeOf(error) }),
+    });
+  }
+
+  private async search(query: ListKnowledgeArticlesQuery): Promise<KnowledgeSearchResponse> {
     const where = publishedArticles({
       ...(query.category ? { category: query.category } : {}),
       ...(query.query ? { translations: { some: matching(query.query, query.language) } } : {}),
@@ -52,8 +163,7 @@ export class KnowledgeService {
     };
   }
 
-  /** A published article by slug. Drafts, archived and unknown slugs are indistinguishable (404). */
-  async get(slug: string, language: KnowledgeLanguage): Promise<KnowledgeArticleResponse> {
+  private async find(slug: string, language: KnowledgeLanguage): Promise<KnowledgeArticleResponse> {
     const article = await this.prisma.knowledgeArticle.findFirst({
       where: publishedArticles({ slug }),
       include: includeFor(language),

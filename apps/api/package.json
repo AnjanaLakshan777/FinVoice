@@ -18,7 +18,8 @@
     "db:migrate:create": "prisma migrate dev --create-only",
     "db:migrate:status": "prisma migrate status",
     "db:seed": "prisma db seed",
-    "db:seed:knowledge": "tsx --env-file-if-exists=../../.env prisma/seed-knowledge.ts"
+    "db:seed:knowledge": "tsx --env-file-if-exists=../../.env prisma/seed-knowledge.ts",
+    "analytics:cleanup": "tsx --env-file-if-exists=../../.env src/analytics/analytics-cleanup.cli.ts"
   },
   "dependencies": {
     "@finvoice/config": "workspace:*",

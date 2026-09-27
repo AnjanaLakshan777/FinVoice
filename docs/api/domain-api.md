@@ -478,7 +478,7 @@ Each request is independent, with no conversation history, and can take several 
 
 A deterministic check of user-supplied content (a message, call, e-mail, offer, website or social-media post, as the user describes it) for scam **warning indicators** (see [scam-shield.md](../architecture/scam-shield.md)). The result is indicator-based. It is **not** a legal or factual determination that something is a scam, and it never says that content is safe. No AI model is involved: the rules are fixed, source-backed patterns. Gemini is never called.
 
-**Privacy:** the content is analysed in memory for this request only. It is not stored or logged, and it is not sent to Gemini or any other external service. The response quotes short parts of the content as evidence, so it is sent with `Cache-Control: no-store`. No authentication is needed, because the endpoint only analyses the submitted text and reads public knowledge. It never reads account data.
+**Privacy:** the content is analysed in memory for this request only. It is not stored or logged, and it is not sent to Gemini or any other external service. ScamShield does not persist user-submitted content or analysis history. It may emit a privacy-safe SCAM_ANALYSIS analytics event containing only typed operational metadata. That event records the risk level, language, content type, success and duration, never the content or evidence. The response quotes short parts of the content as evidence, so it is sent with `Cache-Control: no-store`. No authentication is needed, because the endpoint only analyses the submitted text and reads public knowledge. It never reads account data.
 
 ### `POST /scamshield/analyze`
 
@@ -627,6 +627,69 @@ Personal financial context for trusted FinVoice services only (Step 8). The same
   - `404 NOT_FOUND`: unknown user;
   - `409 CONFLICT`: `start` on a completed topic, or a concurrent change.
 
+## Internal analytics endpoints (INTERNAL, not part of `/api/v1`)
+
+Operational analytics for the temporary admin dashboard (Step 10). They use the same token and header as the other internal endpoints: `x-finvoice-internal-token: <INTERNAL_API_TOKEN>`.
+
+- **Token handling:** a missing or wrong token gives `401`, checked before validation. If the API has no token configured, the answer is `503`.
+- **Aggregates only:** responses never contain events, ids, session ids, users, content or amounts. There is **no endpoint that returns events**.
+- **Caching:** responses are sent with `Cache-Control: no-store`.
+- **Design:** see [analytics.md](../architecture/analytics.md).
+
+### `POST /internal/analytics/events`
+
+For the voice gateway. The only accepted event type today is `VOICE_SESSION`: the API records all other events itself, where the operation runs.
+
+```json
+{
+  "eventType": "VOICE_SESSION",
+  "source": "VOICE",
+  "language": "SI",
+  "success": true,
+  "durationMs": 65000,
+  "sessionId": "0190f0a0-0000-7000-8000-00000000abcd"
+}
+```
+
+The response is `202 {"status":"accepted"}`. The event is stored in the background, with `occurredAt` set by the API.
+
+| Field        | Rules                                                                                                                                        |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `eventType`  | `VOICE_SESSION`                                                                                                                              |
+| `source`     | `VOICE` (voice events always have the source `VOICE`)                                                                                        |
+| `language`   | Optional `SI`, `TA` or `EN`                                                                                                                  |
+| `success`    | Required boolean                                                                                                                             |
+| `durationMs` | Optional integer, 0–86,400,000                                                                                                               |
+| `errorCode`  | Optional, only when `success` is false. A controlled code: an API error code, a voice error code (`VOICE_SESSION_ERROR` …) or a tool failure |
+| `sessionId`  | Optional UUID: the gateway's random connection id (not derived from any identity)                                                            |
+
+Every other field is rejected with `400`. That includes a timestamp, a user id, text, amounts, phone, card or account numbers, OTPs, passwords, tool arguments or results, ScamShield content and a `metadata` object.
+
+### Admin read endpoints
+
+| Method | Path                                         | Returns                                                                                                                                                           |
+| ------ | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/internal/admin/analytics/overview`         | `interactions` (`total`, `agent`, `voice`, `scamshield`, `calculations`, `knowledge`), `successRate`, `averageResponseMs`, `p95ResponseMs`, `responseSampleSize`  |
+| `GET`  | `/internal/admin/analytics/trends`           | `data`: one entry per calendar day (`date`, `agentRequests`, `voiceSessions`, `scamAnalyses`, `calculations`, `knowledgeRequests`, `total`), zeros for empty days |
+| `GET`  | `/internal/admin/analytics/languages`        | `total` and, for SI, TA and EN, `count` and `percentage`                                                                                                          |
+| `GET`  | `/internal/admin/analytics/knowledge`        | `searches`, `articleViews`, `categories` (most used first), `languages`, `articles` (`published`, `translated`, `timeSensitive`, `reviewRequired`)                |
+| `GET`  | `/internal/admin/analytics/scamshield`       | `total`, `successRate`, `riskLevels` (all four), `sourceTypes` (all seven), `languages`                                                                           |
+| `GET`  | `/internal/admin/analytics/literacy`         | `topicsStarted`, `topicsCompleted`, `byCategory`, `languages`, `profiles` (`total`, `assessed`, `unassessed`, `levels`)                                           |
+| `GET`  | `/internal/admin/analytics/tools`            | `total` and, for each tool that was called, `calls`, `agentCalls`, `voiceCalls`, `failed`                                                                         |
+| `GET`  | `/internal/admin/analytics/health`           | `totalEvents`, `failedEvents`, `failureRate`, `recordingFailuresSinceStart`, `byEventType` (with `latency`), `errorCodes`                                         |
+| `GET`  | `/internal/admin/analytics/knowledge-review` | The knowledge review queue: counts per bucket (`OVERDUE`, `DUE_WITHIN_7_DAYS`, `DUE_WITHIN_30_DAYS`, `LATER`) and published articles by next review date          |
+
+Every endpoint except `knowledge-review` takes `?from=YYYY-MM-DD&to=YYYY-MM-DD`:
+
+- calendar dates in **Asia/Colombo**, both inclusive, at most 366 days;
+- the default is the 30 days ending today;
+- any other query parameter is rejected (`400`).
+
+Every response includes `range` (`from`, `to`, `timezone`, `days`).
+
+- **Percentages:** strings with two decimals (`"40.32"`), or `null` when the total is zero.
+- **Latency:** an object `{ sampleSize, averageMs, p50Ms, p95Ms }`. The percentiles are `null` with fewer than 5 samples.
+
 ## Errors
 
 Every error from the API (domain routes, unknown routes and malformed requests) has the same shape:
@@ -642,17 +705,17 @@ Every error from the API (domain routes, unknown routes and malformed requests) 
 
 `details` appears on validation errors, and on conflicts where a field is known. `field` is the dotted path of the offending field, or `null` when the problem is the request as a whole (for example an unknown property).
 
-| Status | `code`                | When                                                                                                         |
-| ------ | --------------------- | ------------------------------------------------------------------------------------------------------------ |
-| 400    | `VALIDATION_ERROR`    | Invalid body, query or path id, unknown property, or a broken domain rule (`currentAmount` > `targetAmount`) |
-| 400    | `BAD_REQUEST`         | The request could not be parsed (for example malformed JSON)                                                 |
-| 404    | `NOT_FOUND`           | The user, profile or goal does not exist or belongs to another user; unknown route                           |
-| 401    | `UNAUTHORIZED`        | Internal endpoints only: missing or wrong internal token                                                     |
-| 409    | `CONFLICT`            | Phone number already registered; the data changed concurrently (retrying may succeed)                        |
-| 413    | `PAYLOAD_TOO_LARGE`   | Request body over 100 kB                                                                                     |
-| 502    | `BAD_GATEWAY`         | The AI provider failed or returned an unusable response (agent only)                                         |
-| 503    | `SERVICE_UNAVAILABLE` | The database cannot be reached; the AI agent or the internal voice endpoints are not configured              |
-| 500    | `INTERNAL_ERROR`      | Anything unexpected                                                                                          |
+| Status | `code`                | When                                                                                                                                                                                                                     |
+| ------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 400    | `VALIDATION_ERROR`    | Invalid body, query or path id, unknown property, or a broken domain rule (`currentAmount` > `targetAmount`)                                                                                                             |
+| 400    | `BAD_REQUEST`         | The request could not be parsed (for example malformed JSON)                                                                                                                                                             |
+| 404    | `NOT_FOUND`           | The user, profile or goal does not exist or belongs to another user; unknown route, inside or outside `/api/v1` (for example `/internal/…`): always this JSON format, `"message": "Route not found"`, never an HTML page |
+| 401    | `UNAUTHORIZED`        | Internal endpoints only: missing or wrong internal token                                                                                                                                                                 |
+| 409    | `CONFLICT`            | Phone number already registered; the data changed concurrently (retrying may succeed)                                                                                                                                    |
+| 413    | `PAYLOAD_TOO_LARGE`   | Request body over 100 kB                                                                                                                                                                                                 |
+| 502    | `BAD_GATEWAY`         | The AI provider failed or returned an unusable response (agent only)                                                                                                                                                     |
+| 503    | `SERVICE_UNAVAILABLE` | The database cannot be reached; the AI agent or the internal endpoints are not configured                                                                                                                                |
+| 500    | `INTERNAL_ERROR`      | Anything unexpected                                                                                                                                                                                                      |
 
 Error responses never contain SQL, database or Prisma messages, constraint names, stack traces, connection strings or credentials. Unexpected errors are logged on the server, with connection strings redacted.
 

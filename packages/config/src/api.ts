@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import { databaseEnvSchema } from "./database.js";
 import {
   geminiModelSchema,
@@ -13,6 +15,11 @@ import {
 /** Default Gemini model; override with GEMINI_MODEL. The only place the default is defined. */
 export const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
 
+/** Analytics events are kept for this many days unless ANALYTICS_RETENTION_DAYS says otherwise. */
+export const DEFAULT_ANALYTICS_RETENTION_DAYS = 90;
+/** Upper bound for ANALYTICS_RETENTION_DAYS (about 10 years): retention is never unbounded. */
+export const MAX_ANALYTICS_RETENTION_DAYS = 3650;
+
 const apiEnvSchema = databaseEnvSchema.extend({
   API_HOST: hostSchema.default("127.0.0.1"),
   API_PORT: portSchema.default(4000),
@@ -27,6 +34,13 @@ const apiEnvSchema = databaseEnvSchema.extend({
    * those endpoints answer 503 and the rest of the API is unaffected.
    */
   INTERNAL_API_TOKEN: internalApiTokenSchema,
+  /** Days analytics events are kept; `pnpm analytics:cleanup` deletes older ones. */
+  ANALYTICS_RETENTION_DAYS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_ANALYTICS_RETENTION_DAYS)
+    .default(DEFAULT_ANALYTICS_RETENTION_DAYS),
 });
 
 /**
@@ -49,6 +63,10 @@ export type ApiConfig = {
     /** Null when INTERNAL_API_TOKEN is not set: the internal endpoints then report 503. */
     token: string | null;
   };
+  analytics: {
+    /** Analytics events older than this many days are deleted by the cleanup command. */
+    retentionDays: number;
+  };
 };
 
 export function loadApiConfig(env: RawEnv = process.env): ApiConfig {
@@ -60,5 +78,6 @@ export function loadApiConfig(env: RawEnv = process.env): ApiConfig {
     database: { url: parsed.DATABASE_URL },
     gemini: { apiKey: parsed.GEMINI_API_KEY, model: parsed.GEMINI_MODEL },
     internal: { token: parsed.INTERNAL_API_TOKEN },
+    analytics: { retentionDays: parsed.ANALYTICS_RETENTION_DAYS },
   };
 }

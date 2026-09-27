@@ -14,6 +14,7 @@ const TEST_CONFIG: ApiConfig = {
   port: 0,
   database: { url: "postgresql://unused:unused@127.0.0.1:1/unused" },
   gemini: { apiKey: null, model: "gemini-test-model" },
+  analytics: { retentionDays: 90 },
   internal: { token: null },
 };
 
@@ -30,7 +31,7 @@ describe("health endpoints", () => {
       .useValue({ ping })
       .compile();
     app = moduleRef.createNestApplication<NestExpressApplication>({ logger: false });
-    configureApp(app);
+    await configureApp(app);
     await app.listen(0, "127.0.0.1");
     baseUrl = await app.getUrl();
   });

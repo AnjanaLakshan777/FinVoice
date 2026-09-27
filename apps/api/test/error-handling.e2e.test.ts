@@ -66,7 +66,7 @@ describe("global validation and error handling", () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [ProbeModule] }).compile();
     app = moduleRef.createNestApplication<NestExpressApplication>({ logger: false });
-    configureApp(app);
+    await configureApp(app);
     await app.listen(0, "127.0.0.1");
     baseUrl = await app.getUrl();
   });
@@ -185,6 +185,31 @@ describe("global validation and error handling", () => {
       message: "Route not found",
     });
   });
+
+  it.each([
+    ["GET", "/does-not-exist"],
+    ["GET", "/internal/does-not-exist"],
+    ["POST", "/internal/analytics/nothing-here"],
+    ["GET", "/health/nope"],
+    ["DELETE", "/api/v2/users"],
+  ])(
+    "answers %s %s (outside /api/v1) with the same JSON 404, not an HTML page",
+    async (method, path) => {
+      const response = await fetch(new URL(path, baseUrl), { method });
+      const text = await response.text();
+
+      expect(response.status).toBe(404);
+      expect(response.headers.get("content-type")).toMatch(/^application\/json/u);
+      expect(JSON.parse(text)).toEqual({
+        statusCode: 404,
+        code: "NOT_FOUND",
+        message: "Route not found",
+      });
+      // The path is not echoed, and nothing reveals the framework.
+      expect(text).not.toContain(path);
+      expect(text).not.toMatch(/Cannot|<html|Error:/u);
+    },
+  );
 
   it("does not advertise the server framework", async () => {
     const response = await call("GET", "/does-not-exist");

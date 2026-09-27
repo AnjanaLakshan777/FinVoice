@@ -9,7 +9,7 @@ import { API_CONFIG } from "./config/api-config.module.js";
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  configureApp(app);
+  await configureApp(app);
   app.enableShutdownHooks();
 
   const config = app.get<ApiConfig>(API_CONFIG);

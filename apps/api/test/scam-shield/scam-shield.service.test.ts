@@ -8,6 +8,7 @@ import { ApiException } from "../../src/common/api.exception.js";
 import type { KnowledgeService } from "../../src/knowledge/knowledge.service.js";
 import { citedSlugs, toScamShieldResponse } from "../../src/scam-shield/scam-shield.mapper.js";
 import { ScamShieldService } from "../../src/scam-shield/scam-shield.service.js";
+import { InMemoryAnalyticsRecorder } from "../support/analytics.js";
 
 const engine = vi.hoisted(() => ({ fail: null as Error | null }));
 
@@ -29,7 +30,10 @@ const SECRET = "Send your OTP 482913 to ZZSECRET";
 function knowledgeReturning(articles: Map<string, KnowledgeArticleResponse>) {
   const getPublishedMany = vi.fn().mockResolvedValue(articles);
   return {
-    service: new ScamShieldService({ getPublishedMany } as unknown as KnowledgeService),
+    service: new ScamShieldService(
+      { getPublishedMany } as unknown as KnowledgeService,
+      new InMemoryAnalyticsRecorder(),
+    ),
     getPublishedMany,
   };
 }
@@ -127,6 +131,33 @@ describe("ScamShield API code", () => {
       const text = readFileSync(new URL(name, directory), "utf8");
       expect(text, name).not.toContain("1935");
       expect(text, name).not.toMatch(/https?:\/\/[a-z0-9]|[\w.+-]+@[\w-]+\.[a-z]{2,}/iu);
+    }
+  });
+});
+
+describe("ScamShield persistence wording (Step 9 docs, updated for Step 10 analytics)", () => {
+  const STATEMENT =
+    "ScamShield does not persist user-submitted content or analysis history. It may emit a privacy-safe SCAM_ANALYSIS analytics event containing only typed operational metadata.";
+  const doc = (path: string) =>
+    readFileSync(new URL(`../../../../${path}`, import.meta.url), "utf8");
+
+  it("states precisely what is and is not persisted", () => {
+    expect(doc("docs/architecture/scam-shield.md")).toContain(STATEMENT);
+    expect(doc("docs/api/domain-api.md")).toContain(STATEMENT);
+  });
+
+  it("no longer claims that ScamShield writes or stores nothing at all", () => {
+    for (const path of [
+      "README.md",
+      "docs/architecture/scam-shield.md",
+      "docs/architecture/system-overview.md",
+      "docs/api/domain-api.md",
+      "apps/api/src/scam-shield/scam-shield.service.ts",
+      "apps/api/src/scam-shield/scam-shield.module.ts",
+    ]) {
+      expect(doc(path), path).not.toMatch(
+        /ScamShield[^.\n]*stores nothing|\(stores nothing\)|## 13\. No storage|Nothing is stored/u,
+      );
     }
   });
 });

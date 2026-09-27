@@ -30,7 +30,7 @@ export class KnowledgeController {
   list(
     @Query({ schema: listKnowledgeArticlesQuerySchema }) query: ListKnowledgeArticlesQuery,
   ): Promise<KnowledgeSearchResponse> {
-    return this.knowledge.list(query);
+    return this.knowledge.list(query, "API");
   }
 
   @Get("articles/:slug")
@@ -38,6 +38,6 @@ export class KnowledgeController {
     @Param({ schema: knowledgeArticleParamsSchema }) params: KnowledgeArticleParams,
     @Query({ schema: getKnowledgeArticleQuerySchema }) query: GetKnowledgeArticleQuery,
   ): Promise<KnowledgeArticleResponse> {
-    return this.knowledge.get(params.slug, query.language);
+    return this.knowledge.get(params.slug, query.language, "API");
   }
 }

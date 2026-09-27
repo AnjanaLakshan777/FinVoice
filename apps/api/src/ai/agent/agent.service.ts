@@ -1,6 +1,17 @@
-import type { AgentChatCommand, AgentChatResponse, AgentToolName } from "@finvoice/contracts";
+import type {
+  AgentChatCommand,
+  AgentChatResponse,
+  AgentToolName,
+  AnalyticsErrorCode,
+} from "@finvoice/contracts";
 import { HttpStatus, Inject, Injectable, Logger } from "@nestjs/common";
 
+import {
+  AnalyticsRecorder,
+  elapsedMs,
+  errorCodeOf,
+  toolExecutionErrorCode,
+} from "../../analytics/analytics-recorder.js";
 import { ApiException } from "../../common/api.exception.js";
 import {
   LANGUAGE_MODEL,
@@ -25,7 +36,8 @@ export const TOOL_LIMIT_MESSAGE =
  * at most MAX_TOOL_CALLS_PER_REQUEST), sends the results back, and returns the final text.
  *
  * Nothing is stored. Logs contain operational facts only (language, sizes, tool names,
- * durations, failure kinds), never the message, tool arguments or answers.
+ * durations, failure kinds), never the message, tool arguments or answers. Analytics events
+ * (AGENT_REQUEST, AGENT_TOOL_CALL) likewise hold language, tool name, success and duration only.
  */
 @Injectable()
 export class AgentService {
@@ -34,6 +46,7 @@ export class AgentService {
   constructor(
     @Inject(LANGUAGE_MODEL) private readonly model: LanguageModel,
     private readonly tools: AgentToolRegistry,
+    private readonly analytics: AnalyticsRecorder,
   ) {}
 
   async chat(command: AgentChatCommand): Promise<AgentChatResponse> {
@@ -58,13 +71,25 @@ export class AgentService {
           this.logger.warn(
             `Agent request stopped: more than ${String(MAX_TOOL_CALLS_PER_REQUEST)} tool calls`,
           );
+          this.trackRequest(language, started, "TOOL_LIMIT_REACHED");
           return this.response(TOOL_LIMIT_MESSAGE, language, usedTools);
         }
 
         const results: ModelToolResult[] = [];
         for (const call of turn.calls) {
           toolCalls += 1;
+          const toolStarted = performance.now();
           const execution = await this.tools.execute(call, { language });
+          const toolError = toolExecutionErrorCode(execution);
+          this.analytics.record({
+            eventType: "AGENT_TOOL_CALL",
+            source: "API",
+            language,
+            ...(execution.tool === null ? {} : { toolName: execution.tool }),
+            success: !execution.isError,
+            durationMs: elapsedMs(toolStarted),
+            ...(toolError === undefined ? {} : { errorCode: toolError }),
+          });
           if (execution.tool && !execution.isError && !usedTools.includes(execution.tool)) {
             usedTools.push(execution.tool);
           }
@@ -81,10 +106,28 @@ export class AgentService {
       this.logger.log(
         `Agent request completed in ${(performance.now() - started).toFixed(0)} ms (${String(toolCalls)} tool calls)`,
       );
+      this.trackRequest(language, started);
       return this.response(turn.text, language, usedTools);
     } catch (error) {
-      throw this.toApiException(error);
+      const failure = this.toApiException(error);
+      this.trackRequest(language, started, errorCodeOf(failure));
+      throw failure;
     }
+  }
+
+  private trackRequest(
+    language: AgentChatCommand["language"],
+    started: number,
+    errorCode?: AnalyticsErrorCode,
+  ): void {
+    this.analytics.record({
+      eventType: "AGENT_REQUEST",
+      source: "API",
+      language,
+      success: errorCode === undefined,
+      durationMs: elapsedMs(started),
+      ...(errorCode === undefined ? {} : { errorCode }),
+    });
   }
 
   private response(

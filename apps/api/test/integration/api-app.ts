@@ -57,6 +57,7 @@ export async function startTestApi(options: TestApiOptions | string = {}): Promi
     database: { url: databaseUrl },
     gemini: gemini ?? { apiKey: null, model: "gemini-test-model" },
     internal: { token: internalToken ?? null },
+    analytics: { retentionDays: 90 },
   };
   let builder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(API_CONFIG)
@@ -66,7 +67,7 @@ export async function startTestApi(options: TestApiOptions | string = {}): Promi
   }
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: logger ?? false });
-  configureApp(app);
+  await configureApp(app);
   await app.listen(0, "127.0.0.1");
   const baseUrl = await app.getUrl();
 

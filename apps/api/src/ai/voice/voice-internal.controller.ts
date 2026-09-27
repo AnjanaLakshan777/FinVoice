@@ -17,6 +17,11 @@ import {
   UseGuards,
 } from "@nestjs/common";
 
+import {
+  AnalyticsRecorder,
+  elapsedMs,
+  toolExecutionErrorCode,
+} from "../../analytics/analytics-recorder.js";
 import { InternalTokenGuard } from "../../common/internal-token.guard.js";
 import {
   AGENT_VERSION,
@@ -37,7 +42,10 @@ const VOICE_CALL_ID = "voice";
 @Controller("internal/voice")
 @UseGuards(InternalTokenGuard)
 export class VoiceInternalController {
-  constructor(private readonly tools: AgentToolRegistry) {}
+  constructor(
+    private readonly tools: AgentToolRegistry,
+    private readonly analytics: AnalyticsRecorder,
+  ) {}
 
   /** The server-controlled setup of a Live session in the requested language. */
   @Get("session-setup")
@@ -58,16 +66,29 @@ export class VoiceInternalController {
    * allowlist, Step 6 input contracts, finance engine and knowledge service. Problems caused by
    * the model (unknown tool, invalid arguments) are structured results, not HTTP errors.
    * Calculation results also carry `spokenAmounts` (the same amounts formatted for speech).
+   * Counted here as a VOICE_TOOL_CALL analytics event (tool name, language, success, duration),
+   * where the tool actually runs, so the gateway does not have to report it.
    */
   @Post("tools/execute")
   @HttpCode(HttpStatus.OK)
   async executeTool(
     @Body({ schema: voiceToolExecutionRequestSchema }) body: VoiceToolExecutionRequest,
   ): Promise<VoiceToolExecutionResponse> {
+    const started = performance.now();
     const execution = await this.tools.execute(
       { id: VOICE_CALL_ID, name: body.name, arguments: body.arguments },
       { language: body.language },
     );
+    const errorCode = toolExecutionErrorCode(execution);
+    this.analytics.record({
+      eventType: "VOICE_TOOL_CALL",
+      source: "VOICE",
+      language: body.language,
+      ...(execution.tool === null ? {} : { toolName: execution.tool }),
+      success: !execution.isError,
+      durationMs: elapsedMs(started),
+      ...(errorCode === undefined ? {} : { errorCode }),
+    });
     return withSpokenAmounts(execution);
   }
 }

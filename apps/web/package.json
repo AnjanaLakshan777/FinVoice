@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@finvoice/config": "workspace:*",
     "@finvoice/contracts": "workspace:*",
     "@finvoice/shared": "workspace:*",
     "next": "16.3.6",

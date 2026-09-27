@@ -297,6 +297,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@finvoice/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@finvoice/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
