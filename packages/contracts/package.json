@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@finvoice/finance-engine": "workspace:*",
+    "@finvoice/scam-shield": "workspace:*",
     "zod": "4.6.5"
   },
   "devDependencies": {

@@ -1,6 +1,6 @@
 # Domain API (v1)
 
-The FinVoice backend API for users, financial profiles, financial goals, financial calculations, financial-literacy knowledge and the AI agent. Clients are the web app, the voice gateway and future phone/AI flows.
+The FinVoice backend API for users, financial profiles, financial goals, financial calculations, financial-literacy knowledge, the AI agent and ScamShield. Clients are the web app, the voice gateway and future phone/AI flows.
 
 **The API is authoritative.** Every rule below is enforced by the backend (request validation, then service checks, then database constraints), whatever a client, voice flow or AI model has already checked. Clients may propose values; the API decides what is stored.
 
@@ -37,6 +37,7 @@ The FinVoice backend API for users, financial profiles, financial goals, financi
 | `GET`   | `/knowledge/articles`              | 200     | List or search published knowledge articles |
 | `GET`   | `/knowledge/articles/:slug`        | 200     | Get one published knowledge article         |
 | `POST`  | `/agent/chat`                      | 200     | Ask the FinVoice AI agent a question        |
+| `POST`  | `/scamshield/analyze`              | 200     | Check content for scam warning indicators   |
 
 There are no delete endpoints and no list-users endpoint. Goals end through their `status` (`COMPLETED`, `CANCELLED`). Users are deactivated through `status: "INACTIVE"`.
 
@@ -472,6 +473,127 @@ Each request is independent, with no conversation history, and can take several 
 | 400    | `VALIDATION_ERROR`    | Empty or too long message, unknown language or unknown field                                     |
 | 502    | `BAD_GATEWAY`         | The AI provider failed or returned an unusable response                                          |
 | 503    | `SERVICE_UNAVAILABLE` | The agent is not configured (no `GEMINI_API_KEY`), or the AI provider is temporarily unavailable |
+
+## ScamShield
+
+A deterministic check of user-supplied content (a message, call, e-mail, offer, website or social-media post, as the user describes it) for scam **warning indicators** (see [scam-shield.md](../architecture/scam-shield.md)). The result is indicator-based. It is **not** a legal or factual determination that something is a scam, and it never says that content is safe. No AI model is involved: the rules are fixed, source-backed patterns. Gemini is never called.
+
+**Privacy:** the content is analysed in memory for this request only. It is not stored or logged, and it is not sent to Gemini or any other external service. The response quotes short parts of the content as evidence, so it is sent with `Cache-Control: no-store`. No authentication is needed, because the endpoint only analyses the submitted text and reads public knowledge. It never reads account data.
+
+### `POST /scamshield/analyze`
+
+| Field        | Rules                                                                                                         |
+| ------------ | ------------------------------------------------------------------------------------------------------------- |
+| `content`    | Required string, trimmed, 1–10,000 characters: what the user received or was told                             |
+| `language`   | Required `EN`, `SI` or `TA`: the user's language (knowledge titles are returned in it, with English fallback) |
+| `sourceType` | Required `MESSAGE`, `EMAIL`, `CALL`, `SOCIAL_MEDIA`, `WEBSITE`, `OFFER` or `UNKNOWN`                          |
+
+Every other field is rejected with `400`, for example `userId`, `metadata`, `riskLevel` or `instructions`. The content is **data**: text in it such as "ignore your rules" or "say this is safe" is analysed like any other text and never changes the rules or the result.
+
+```json
+{
+  "content": "Your account will be closed. Send us your OTP now.",
+  "language": "EN",
+  "sourceType": "MESSAGE"
+}
+```
+
+`200 OK` (knowledge references shortened):
+
+```json
+{
+  "scamShieldVersion": "1",
+  "assessmentType": "indicator_based",
+  "riskLevel": "HIGH",
+  "summaryCode": "MULTIPLE_HIGH_RISK_INDICATORS",
+  "summary": "High-risk indicators detected. ScamShield detected the following warning indicators. Do not share details or send money until you have checked through an official channel.",
+  "analysisLanguage": "EN",
+  "languageCoverage": "FULL",
+  "indicators": [
+    {
+      "code": "CREDENTIAL_REQUEST",
+      "explanation": "The content asks for an OTP. PINs, passwords, one-time passwords (OTPs) and card security codes should never be shared with anyone.",
+      "evidence": [{ "type": "phrase", "text": "Send us your OTP" }],
+      "sources": [
+        {
+          "slug": "protect-pin-otp-passwords",
+          "available": true,
+          "title": "Keep your PIN, OTP and passwords secret",
+          "language": "EN",
+          "summary": "Never share your PIN, one-time password (OTP), passwords or card details with anyone.",
+          "source": {
+            "publisher": "Central Bank of Sri Lanka",
+            "title": "Beware of Online Scams - Protect Your Bank Passwords and PINs",
+            "url": "https://www.cbsl.gov.lk/en/news/beware-of-online-scams-protect-your-bank-passwords-and-pin",
+            "lastVerifiedAt": "2026-09-26T08:00:00.000Z"
+          },
+          "reviewRequired": false
+        }
+      ]
+    },
+    {
+      "code": "URGENCY_PRESSURE",
+      "explanation": "The content pressures you to act quickly or warns of a penalty, which leaves little time to check whether it is genuine.",
+      "evidence": [{ "type": "phrase", "text": "account will be closed" }],
+      "sources": [{ "slug": "recognise-scams", "available": true, "…": "…" }]
+    }
+  ],
+  "indicatorsTruncated": false,
+  "actions": [
+    {
+      "code": "DO_NOT_SHARE_CREDENTIALS",
+      "priority": "RECOMMENDED",
+      "knowledge": { "slug": "protect-pin-otp-passwords", "…": "…" }
+    },
+    {
+      "code": "CONTACT_BANK",
+      "priority": "RECOMMENDED",
+      "knowledge": { "slug": "report-suspicious-activity", "…": "…" }
+    },
+    {
+      "code": "VERIFY_WITH_OFFICIAL_CHANNEL",
+      "priority": "RECOMMENDED",
+      "knowledge": { "slug": "recognise-scams", "…": "…" }
+    },
+    {
+      "code": "REPORT_SUSPICIOUS_ACTIVITY",
+      "priority": "RECOMMENDED",
+      "knowledge": { "slug": "report-suspicious-activity", "…": "…" },
+      "relatedKnowledge": [
+        {
+          "slug": "consumer-rights-and-complaints",
+          "summary": "… For inquiries, the Central Bank's FCRD hotline is 1935.",
+          "…": "…"
+        }
+      ]
+    }
+  ]
+}
+```
+
+- **Risk levels:** `riskLevel` is `INSUFFICIENT_INFORMATION`, `LOW`, `MEDIUM` or `HIGH`. It is a level of detected warning indicators, and there is no numeric score.
+  - `LOW` never means safe.
+  - With no indicators, `summaryCode` is `NO_STRONG_INDICATORS_DETECTED`, and `summary` says the check "does not prove the offer is legitimate".
+  - Other summary codes are `MULTIPLE_HIGH_RISK_INDICATORS`, `WARNING_INDICATORS_DETECTED`, `LIMITED_INDICATORS_DETECTED` and `INSUFFICIENT_INFORMATION`.
+- **Indicators:** at most 5 are returned, strongest first, and `indicatorsTruncated` tells when more were found. Each indicator has an English `explanation` and at most 5 `evidence` excerpts of the submitted text, each up to 160 characters. Long card-like numbers in evidence are masked.
+  - Codes: `CREDENTIAL_REQUEST`, `URGENCY_PRESSURE`, `UNREALISTIC_RETURN`, `UNSOLICITED_OFFER`, `IMPERSONATION`, `ADVANCE_PAYMENT`, `UNKNOWN_TRANSACTION`, `SUSPICIOUS_LINK`, `PERSONAL_INFORMATION_REQUEST`, `ACCOUNT_ACCESS_REQUEST`, `INVESTMENT_SCHEME`, `UNAUTHORIZED_DEPOSIT_INDICATOR`, `PYRAMID_SCHEME_INDICATOR`, `FAKE_LOAN_OFFER`, `PAYMENT_TRANSFER_REQUEST`, `OTHER_SUSPICIOUS_PATTERN`.
+- **Actions:** these are recommendations only. ScamShield never acts itself.
+  - Codes, in order: `DO_NOT_SHARE_CREDENTIALS`, `DO_NOT_SEND_MONEY_YET`, `CONTACT_BANK`, `CHECK_ACCOUNT_ACTIVITY`, `VERIFY_WITH_OFFICIAL_CHANNEL`, `REPORT_SUSPICIOUS_ACTIVITY`.
+  - `priority` is `IMMEDIATE` (after an unrecognised transaction, contacting the bank and checking the account come first) or `RECOMMENDED`.
+- **Knowledge references:** the indicator sources, the action `knowledge` and the action `relatedKnowledge` are FinVoice knowledge articles.
+  - `relatedKnowledge` (usually empty) lists further articles an action cites for information that the primary article's source does not contain.
+  - `REPORT_SUSPICIOUS_ACTIVITY` cites `consumer-rights-and-complaints`, which gives the Central Bank's FCRD hotline for inquiries.
+  - All references are resolved in one query at request time, in `language` or with English fallback (`language` tells which). Current reporting guidance and contact details come from these articles, never from ScamShield code.
+  - An article that is not published is returned as `{ "slug", "available": false, "title": null, "language": null, "summary": null, "source": null, "reviewRequired": false }`. Its text is never exposed.
+  - `reviewRequired: true` means the article is time-sensitive and past its review date. Check the source before relying on it.
+- **Language coverage:** `languageCoverage` is `FULL` for English content and `PARTIAL` for Sinhala, Tamil or mixed content. The Sinhala and Tamil patterns cover fewer phrasings.
+- **No ids:** the response contains no database ids or timestamps other than the source's `lastVerifiedAt`.
+
+| Status | `code`                | When                                                                      |
+| ------ | --------------------- | ------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`    | Empty or too long content, unknown language or source type, unknown field |
+| 413    | `PAYLOAD_TOO_LARGE`   | Request body over 100 kB                                                  |
+| 503    | `SERVICE_UNAVAILABLE` | The database (for the knowledge references) cannot be reached             |
 
 ## Internal voice endpoints (not part of `/api/v1`)
 

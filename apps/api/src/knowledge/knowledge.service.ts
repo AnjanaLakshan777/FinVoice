@@ -65,6 +65,31 @@ export class KnowledgeService {
     return response;
   }
 
+  /**
+   * Published articles for several slugs in ONE query, keyed by slug (for callers that cite many
+   * articles, such as ScamShield). Unknown, draft, archived and unsafe articles are simply absent.
+   */
+  async getPublishedMany(
+    slugs: readonly string[],
+    language: KnowledgeLanguage,
+  ): Promise<Map<string, KnowledgeArticleResponse>> {
+    const unique = [...new Set(slugs)];
+    if (unique.length === 0) {
+      return new Map();
+    }
+    const articles = await this.prisma.knowledgeArticle.findMany({
+      where: publishedArticles({ slug: { in: unique } }),
+      include: includeFor(language),
+    });
+    const now = new Date();
+    return new Map(
+      articles.flatMap((article) => {
+        const response = toKnowledgeArticleResponse(article, language, now);
+        return response ? [[response.slug, response] as const] : [];
+      }),
+    );
+  }
+
   /** Categories that currently have at least one published article. */
   async categories(): Promise<KnowledgeCategoriesResponse> {
     const groups = await this.prisma.knowledgeArticle.groupBy({

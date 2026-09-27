@@ -8,7 +8,7 @@ Default local base URL: `http://127.0.0.1:4000`
 
 ### Domain API: `/api/v1`
 
-Users, financial profiles, financial goals, financial calculations, financial-literacy knowledge and the AI agent: endpoints, validation rules, money and date formats, pagination and the error format are documented in **[domain-api.md](domain-api.md)**.
+Users, financial profiles, financial goals, financial calculations, financial-literacy knowledge, the AI agent and ScamShield: endpoints, validation rules, money and date formats, pagination and the error format are documented in **[domain-api.md](domain-api.md)**.
 
 | Method  | Path                                      |
 | ------- | ----------------------------------------- |
@@ -28,6 +28,7 @@ Users, financial profiles, financial goals, financial calculations, financial-li
 | `GET`   | `/api/v1/knowledge/articles`              |
 | `GET`   | `/api/v1/knowledge/articles/:slug`        |
 | `POST`  | `/api/v1/agent/chat`                      |
+| `POST`  | `/api/v1/scamshield/analyze`              |
 
 Health checks are not versioned and stay at the root, for load balancers and orchestrators.
 

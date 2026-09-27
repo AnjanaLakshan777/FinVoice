@@ -10,6 +10,7 @@ import { FinancialGoalsModule } from "./financial-goals/financial-goals.module.j
 import { FinancialProfilesModule } from "./financial-profiles/financial-profiles.module.js";
 import { HealthModule } from "./health/health.module.js";
 import { KnowledgeModule } from "./knowledge/knowledge.module.js";
+import { ScamShieldModule } from "./scam-shield/scam-shield.module.js";
 import { UsersModule } from "./users/users.module.js";
 
 @Module({
@@ -25,6 +26,7 @@ import { UsersModule } from "./users/users.module.js";
     AgentModule,
     VoiceInternalModule,
     FinancialContextModule,
+    ScamShieldModule,
   ],
 })
 export class AppModule {}

@@ -1,0 +1,27 @@
+{
+  "name": "@finvoice/scam-shield",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Deterministic, source-grounded scam warning-indicator engine (no AI, no network, no storage).",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "pnpm run clean && tsc --project tsconfig.build.json",
+    "clean": "node --eval \"fs.rmSync('dist', { recursive: true, force: true })\"",
+    "typecheck": "tsc --project tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "typescript": "6.0.3",
+    "vitest": "5.0.1"
+  }
+}

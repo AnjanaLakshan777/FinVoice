@@ -202,6 +202,9 @@ importers:
       '@finvoice/finance-engine':
         specifier: workspace:*
         version: link:../../packages/finance-engine
+      '@finvoice/scam-shield':
+        specifier: workspace:*
+        version: link:../../packages/scam-shield
       '@finvoice/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -356,6 +359,9 @@ importers:
       '@finvoice/finance-engine':
         specifier: workspace:*
         version: link:../finance-engine
+      '@finvoice/scam-shield':
+        specifier: workspace:*
+        version: link:../scam-shield
       zod:
         specifier: 4.6.5
         version: 4.6.5
@@ -375,6 +381,18 @@ importers:
       decimal.js:
         specifier: 10.6.0
         version: 10.6.0
+    devDependencies:
+      '@types/node':
+        specifier: 24.13.6
+        version: 24.13.6
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 5.0.1
+        version: 5.0.1(@types/node@24.13.6)(jsdom@30.1.0)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/scam-shield:
     devDependencies:
       '@types/node':
         specifier: 24.13.6

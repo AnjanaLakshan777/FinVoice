@@ -22,6 +22,8 @@ describe("database migrations", () => {
       "20260925180300_init_core_domain",
       "20260926081151_knowledge_base",
       "20260927120000_financial_literacy",
+      "20260927200000_knowledge_fcrd_hotline",
+      "20260927210000_knowledge_fcrd_hotline_summary",
     ]);
 
     const status = runPrisma(["migrate", "status"], databaseUrl);

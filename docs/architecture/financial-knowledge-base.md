@@ -44,17 +44,24 @@ Sources are ranked by `sourceType`, and more authoritative sources are preferred
 
 The initial sources (all CBSL, all read and checked on 26 September 2026):
 
-| Source                                                                                                                                                                                                                                     | Used for                                                          |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| Financial Literacy Curriculum (PDF), Chapter 3                                                                                                                                                                                             | Why saving matters, simple budget, emergency savings              |
-| Financial Literacy Roadmap of Sri Lanka 2024-2028 (launch notice, 21 May 2024)                                                                                                                                                             | Why financial literacy matters                                    |
-| Financial Consumer Relations Department (FCRD) page                                                                                                                                                                                        | Responsible borrowing, understanding terms, rights and complaints |
-| Be Scam Proof: the page, its posters 'Don't Recognize a Transaction? Don't Ignore It!' and 'Your password and PIN are like your toothbrush!', and the linked FIU booklet 'Financial Scams: The Hell Underneath The Heaven' (December 2023) | Recognising scams, what to do about suspicious activity           |
-| Beware of Online Scams - Protect Your Bank Passwords and PINs (21 Nov 2019)                                                                                                                                                                | Keeping your PIN, OTP and passwords secret                        |
-| Adopting Safe and Secure Electronic Payment Practices (1 Aug 2019)                                                                                                                                                                         | Safe digital payments                                             |
-| Sri Lanka Deposit Insurance Scheme page                                                                                                                                                                                                    | Deposit insurance (time-sensitive)                                |
+| Source                                                                                                                                                                                                                                     | Used for                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| Financial Literacy Curriculum (PDF), Chapter 3                                                                                                                                                                                             | Why saving matters, simple budget, emergency savings                                                           |
+| Financial Literacy Roadmap of Sri Lanka 2024-2028 (launch notice, 21 May 2024)                                                                                                                                                             | Why financial literacy matters                                                                                 |
+| Financial Consumer Relations Department (FCRD) page (re-checked 27 September 2026)                                                                                                                                                         | Responsible borrowing, understanding terms, rights and complaints (with the inquiries hotline: time-sensitive) |
+| Be Scam Proof: the page, its posters 'Don't Recognize a Transaction? Don't Ignore It!' and 'Your password and PIN are like your toothbrush!', and the linked FIU booklet 'Financial Scams: The Hell Underneath The Heaven' (December 2023) | Recognising scams, what to do about suspicious activity                                                        |
+| Beware of Online Scams - Protect Your Bank Passwords and PINs (21 Nov 2019)                                                                                                                                                                | Keeping your PIN, OTP and passwords secret                                                                     |
+| Adopting Safe and Secure Electronic Payment Practices (1 Aug 2019)                                                                                                                                                                         | Safe digital payments                                                                                          |
+| Sri Lanka Deposit Insurance Scheme page                                                                                                                                                                                                    | Deposit insurance (time-sensitive)                                                                             |
 
 The suspicious-activity article was re-based on the current Be Scam Proof material (re-read on 26 September 2026): it gives the warning signs and the immediate steps, and the linked FIU booklet says to complain to the police and report to the bank. **That material names channels (your bank, the police) but gives no hotline numbers or other contact details, so the article states none.** The 2019 notice remains a source because the PIN/OTP/password article relies on it (it is the notice that lists card details such as the CVV).
+
+**FCRD hotline (Step 9 refresh).** The FCRD page, re-read on 27 September 2026, lists "Hotline for Inquiries : 1935" under its contact details. The Be Scam Proof material served that day (the page's raw HTML, its posters, logo and linked PDFs, checked twice) contains no hotline or other contact details.
+
+- **Where it went:** the number was added to `consumer-rights-and-complaints`, the FCRD-sourced article, as an inquiries hotline. It was not added to `report-suspicious-activity`, whose Be Scam Proof source does not contain it.
+- **Summary and body:** the number is in the article body and, so that references to the article show it (for example ScamShield's reporting action), in its English summary.
+- **Review:** that article is now time-sensitive, reviewed every 3 months. The FCRD source's verification and review dates were updated.
+- **CMS:** the CBSL online Complaint Management System (release of 15 May 2026) was not added. Its release is a different source from the one this article cites (one source per article).
 
 The Financial Consumer Protection Regulations No. 01 of 2023 page was also checked. But it is an index page that does not itself state the principles, so no article cites it, and it is not recorded as a source.
 
@@ -125,7 +132,8 @@ Every response carries its **source attribution**: publisher, title, URL, type, 
 Some facts change: coverage amounts, limits, rules, programmes and contact details. Articles containing such facts have `is_time_sensitive = true` and **must** have `last_reviewed_at` and `next_review_at` (enforced by the database).
 
 - The deposit insurance limit (currently Rs. 1,100,000 per depositor, per institution) lives **only in the article text**, never in application code. When it changes, the content changes and the code does not.
-- Content tests require every article that mentions a rupee amount to be time-sensitive, with a review interval of at most 3 months.
+- Contact details (the FCRD inquiries hotline 1935) also live only in article text, never in application code, including ScamShield.
+- Content tests require every article that mentions a rupee amount or contact details (a hotline, phone number or e-mail address) to be time-sensitive, with a review interval of at most 3 months.
 
 ## 8. Review dates and the `reviewRequired` flag
 
@@ -153,6 +161,7 @@ DRAFT ──(source attached, content checked)──▶ PUBLISHED ──(withdra
 **The seed** (`pnpm db:seed:knowledge`) is:
 
 - **insert-only and idempotent**: it adds missing sources, articles and translations by natural key (URL, slug, article + language), and never updates or deletes anything. Content changed in the database is therefore never overwritten. Records that differ from the content file are listed, not changed.
+- **refreshed through guarded data migrations**: because the seed never updates existing records, a correction to already-seeded content ships as a data migration. It updates a record only while that record still holds exactly the previously seeded values, so reviewed or edited content is never overwritten. The first such migrations are `20260927200000_knowledge_fcrd_hotline` and `20260927210000_knowledge_fcrd_hotline_summary` (the FCRD hotline). Its previous values are kept in `prisma/knowledge/refresh/`, and tests prove that it produces exactly the current content file and leaves edited records alone.
 - **separate from the demo seed** (`pnpm db:seed`), because this content is real and meant for every environment.
 - **guarded in production**: with `NODE_ENV=production` it refuses to run unless `--allow-production` is passed.
 

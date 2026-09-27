@@ -68,6 +68,12 @@ const NEXT_YEARLY_REVIEW = "2027-09-26T08:00:00.000Z";
 const BE_SCAM_PROOF_RECHECKED_AT = "2026-09-26T09:20:00.000Z";
 /** Time-sensitive facts (amounts, limits) are re-checked every 3 months. */
 const NEXT_QUARTERLY_REVIEW = "2026-12-26T08:00:00.000Z";
+/**
+ * The FCRD page was re-read on 27 September 2026 for its contact details ("Hotline for Inquiries :
+ * 1935"). Contact details are time-sensitive, so they are re-checked every 3 months.
+ */
+const FCRD_RECHECKED_AT = "2026-09-27T12:00:00.000Z";
+const FCRD_NEXT_QUARTERLY_REVIEW = "2026-12-27T12:00:00.000Z";
 
 const URL = {
   curriculum:
@@ -109,7 +115,17 @@ export const knowledgeSources: readonly KnowledgeSourceContent[] = [
     "Central Bank Launches Financial Literacy Roadmap of Sri Lanka 2024-2028",
     "2024-05-21",
   ),
-  cbslSource(URL.consumerRelations, "Financial Consumer Relations Department (FCRD)", null),
+  // Re-read on 27 September 2026 for the contact details in consumer-rights-and-complaints.
+  {
+    ...cbslSource(
+      URL.consumerRelations,
+      "Financial Consumer Relations Department (FCRD)",
+      null,
+      FCRD_NEXT_QUARTERLY_REVIEW,
+    ),
+    retrievedAt: FCRD_RECHECKED_AT,
+    lastVerifiedAt: FCRD_RECHECKED_AT,
+  },
   // Re-read on 26 September 2026 (campaign page, posters and linked publications) for the
   // suspicious-activity article.
   {
@@ -140,7 +156,12 @@ function article(
     KnowledgeArticleContent,
     "status" | "audience" | "lastReviewedAt" | "nextReviewAt" | "isTimeSensitive"
   > &
-    Partial<Pick<KnowledgeArticleContent, "isTimeSensitive" | "nextReviewAt" | "audience">>,
+    Partial<
+      Pick<
+        KnowledgeArticleContent,
+        "isTimeSensitive" | "lastReviewedAt" | "nextReviewAt" | "audience"
+      >
+    >,
 ): KnowledgeArticleContent {
   return {
     status: "PUBLISHED",
@@ -397,17 +418,35 @@ export const knowledgeArticles: readonly KnowledgeArticleContent[] = [
     slug: "consumer-rights-and-complaints",
     category: "CONSUMER_PROTECTION",
     sourceUrl: URL.consumerRelations,
-    sourceSection: "Financial consumer rights and responsibilities; complaint handling",
+    // The hotline is the FCRD page's "Hotline for Inquiries" (under "Contact Details"). It is not
+    // on the Be Scam Proof page, so it belongs here rather than in report-suspicious-activity.
+    // Contact details can change: time-sensitive, reviewed every 3 months.
+    sourceSection:
+      "Financial consumer rights and responsibilities; complaint handling; contact details (Hotline for Inquiries)",
+    isTimeSensitive: true,
+    lastReviewedAt: FCRD_RECHECKED_AT,
+    nextReviewAt: FCRD_NEXT_QUARTERLY_REVIEW,
     translations: {
       EN: text(
         "Your rights as a financial consumer, and how to complain",
-        "You have the right to fair treatment, clear information and privacy. If you have a problem, complain to the financial institution first.",
+        "You have the right to fair treatment, clear information and privacy. If you have a problem, complain to the financial institution first. For inquiries, the Central Bank's FCRD hotline is 1935.",
         [
           "The Central Bank of Sri Lanka lists these rights of financial consumers:\n- to be treated fairly by financial service providers\n- to complain, and to get a satisfactory answer within a reasonable time\n- to have your financial information kept private and confidential\n- to have access to suitable financial products and services\n- to receive information that is complete, clear, short, accurate and not misleading",
           "If you have a complaint:\n- First, complain to the financial institution concerned.\n- If you are not satisfied with its answer, you can take your complaint to the Central Bank's Financial Consumer Relations Department (FCRD).",
+          "For inquiries, the FCRD has a hotline: 1935. Contact details can change, so check the Central Bank of Sri Lanka's website for the latest details.",
           "You also have responsibilities, such as understanding the terms before you agree, giving accurate information and taking care in every transaction.",
         ].join("\n\n"),
-        ["rights", "complaint", "complaints", "fcrd", "consumer protection", "privacy"],
+        [
+          "rights",
+          "complaint",
+          "complaints",
+          "fcrd",
+          "consumer protection",
+          "privacy",
+          "hotline",
+          "1935",
+          "inquiries",
+        ],
       ),
     },
   }),

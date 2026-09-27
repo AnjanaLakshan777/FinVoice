@@ -24,6 +24,7 @@
     "@finvoice/config": "workspace:*",
     "@finvoice/contracts": "workspace:*",
     "@finvoice/finance-engine": "workspace:*",
+    "@finvoice/scam-shield": "workspace:*",
     "@finvoice/shared": "workspace:*",
     "@google/genai": "2.24.0",
     "@nestjs/common": "12.1.0",

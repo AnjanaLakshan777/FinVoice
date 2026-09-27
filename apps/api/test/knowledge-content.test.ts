@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -5,6 +7,7 @@ import {
   knowledgeSources,
   type KnowledgeTranslationContent,
 } from "../prisma/knowledge/content.js";
+import { FCRD_HOTLINE_REFRESH } from "../prisma/knowledge/refresh/20260927-fcrd-hotline.js";
 import { isReviewOverdue } from "../src/knowledge/knowledge.mapper.js";
 import { escapeLikeWildcards } from "../src/knowledge/knowledge.service.js";
 
@@ -97,7 +100,10 @@ describe("knowledge articles", () => {
 
   it("gives every time-sensitive article review dates, reviewed at most every 3 months", () => {
     const timeSensitive = knowledgeArticles.filter((article) => article.isTimeSensitive);
-    expect(timeSensitive.map((article) => article.slug)).toEqual(["deposit-insurance"]);
+    expect(timeSensitive.map((article) => article.slug)).toEqual([
+      "consumer-rights-and-complaints",
+      "deposit-insurance",
+    ]);
     for (const article of timeSensitive) {
       const interval = Date.parse(article.nextReviewAt) - Date.parse(article.lastReviewedAt);
       expect(interval).toBeGreaterThan(0);
@@ -115,6 +121,69 @@ describe("knowledge articles", () => {
         expect(article.isTimeSensitive, article.slug).toBe(true);
       }
     }
+  });
+
+  it("keeps contact details only in time-sensitive articles, attributed to their source", () => {
+    // Hotlines and other contact details can change and need regular review.
+    for (const article of knowledgeArticles) {
+      const mentionsContact = translationsOf(article).some(([, translation]) =>
+        /hotline|\b1935\b|@|\+94/i.test(allText(translation)),
+      );
+      if (mentionsContact) {
+        expect(article.isTimeSensitive, article.slug).toBe(true);
+      }
+    }
+    // The 1935 inquiries hotline comes from the FCRD page, not from Be Scam Proof.
+    const withHotline = knowledgeArticles.filter((article) =>
+      article.translations.EN.body.includes("1935"),
+    );
+    expect(withHotline.map((article) => [article.slug, article.sourceUrl])).toEqual([
+      ["consumer-rights-and-complaints", "https://www.cbsl.gov.lk/en/fcrd"],
+    ]);
+    const fcrd = knowledgeSources.find(
+      (source) => source.url === "https://www.cbsl.gov.lk/en/fcrd",
+    );
+    expect(Date.parse(fcrd?.lastVerifiedAt ?? "")).toBeGreaterThanOrEqual(
+      Date.parse(withHotline[0]?.lastReviewedAt ?? ""),
+    );
+  });
+
+  it("describes the knowledge refresh with the same content the seed inserts", () => {
+    const article = knowledgeArticles.find(
+      (candidate) => candidate.slug === FCRD_HOTLINE_REFRESH.articleSlug,
+    );
+    // The refresh only adds the hotline paragraph and keywords to the previous text.
+    const before = FCRD_HOTLINE_REFRESH.before.english;
+    const paragraphs = article?.translations.EN.body.split("\n\n") ?? [];
+    expect(paragraphs.filter((paragraph) => !paragraph.includes("1935")).join("\n\n")).toBe(
+      before.body,
+    );
+    expect(article?.translations.EN.keywords.slice(0, before.keywords.length)).toEqual([
+      ...before.keywords,
+    ]);
+    // The summary only gains the hotline sentence.
+    expect(article?.translations.EN.summary).toBe(
+      `${before.summary} For inquiries, the Central Bank's FCRD hotline is 1935.`,
+    );
+  });
+
+  it("keeps the refresh migrations' texts identical to the content file", () => {
+    const article = knowledgeArticles.find(
+      (candidate) => candidate.slug === FCRD_HOTLINE_REFRESH.articleSlug,
+    );
+    const english = article?.translations.EN;
+    const migration = (name: string) =>
+      readFileSync(new URL(`../prisma/migrations/${name}/migration.sql`, import.meta.url), "utf8");
+    const bodyMigration = migration("20260927200000_knowledge_fcrd_hotline");
+    const summaryMigration = migration("20260927210000_knowledge_fcrd_hotline_summary");
+    expect(bodyMigration).toContain(`$knowledge$${english?.body ?? ""}$knowledge$`);
+    expect(bodyMigration).toContain(
+      `$knowledge$${FCRD_HOTLINE_REFRESH.before.english.body}$knowledge$`,
+    );
+    expect(summaryMigration).toContain(`$knowledge$${english?.summary ?? ""}$knowledge$`);
+    expect(summaryMigration).toContain(
+      `$knowledge$${FCRD_HOTLINE_REFRESH.before.english.summary}$knowledge$`,
+    );
   });
 
   it("contains no placeholders", () => {

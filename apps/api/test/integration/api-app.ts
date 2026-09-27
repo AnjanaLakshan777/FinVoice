@@ -1,4 +1,5 @@
 import type { ApiConfig } from "@finvoice/config";
+import type { LoggerService } from "@nestjs/common";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { Test } from "@nestjs/testing";
 import { inject } from "vitest";
@@ -14,6 +15,8 @@ export type ApiResponse<T = unknown> = { status: number; body: T; text: string }
 export type TestApi = {
   /** The application's own PrismaService, for arranging data and checking persistence. */
   prisma: PrismaService;
+  /** Resolves a provider of the running application (for spying on services). */
+  get<T>(token: abstract new (...args: never[]) => T): T;
   request<T = unknown>(
     method: string,
     path: string,
@@ -31,6 +34,8 @@ export type TestApiOptions = {
   gemini?: ApiConfig["gemini"];
   /** Shared token for the internal voice endpoints; by default none (they answer 503). */
   internalToken?: string;
+  /** Receives everything the application logs; by default logging is off. */
+  logger?: LoggerService;
 };
 
 /**
@@ -43,6 +48,7 @@ export async function startTestApi(options: TestApiOptions | string = {}): Promi
     languageModel,
     gemini,
     internalToken,
+    logger,
   } = typeof options === "string" ? { databaseUrl: options } : options;
   const config: ApiConfig = {
     nodeEnv: "test",
@@ -59,13 +65,14 @@ export async function startTestApi(options: TestApiOptions | string = {}): Promi
     builder = builder.overrideProvider(LANGUAGE_MODEL).useValue(languageModel);
   }
   const moduleRef = await builder.compile();
-  const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: false });
+  const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: logger ?? false });
   configureApp(app);
   await app.listen(0, "127.0.0.1");
   const baseUrl = await app.getUrl();
 
   return {
     prisma: app.get(PrismaService),
+    get: (token) => app.get(token),
     async request<T>(
       method: string,
       path: string,

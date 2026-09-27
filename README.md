@@ -4,7 +4,7 @@ FinVoice is a voice-first financial inclusion and financial literacy platform fo
 
 ## Current status
 
-**Step 7: browser voice.** This repository has:
+**Step 9: ScamShield.** This repository has:
 
 - a pnpm monorepo with strict TypeScript, ESLint, Prettier, Vitest and CI;
 - a **web app** (Next.js) with a `/voice` page for real-time voice conversations;
@@ -12,11 +12,13 @@ FinVoice is a voice-first financial inclusion and financial literacy platform fo
 - a framework-independent **financial calculation engine** (loan repayment, savings plan, budget summary) with exact decimal arithmetic, exposed under `/api/v1/calculations`;
 - a curated, source-backed **financial knowledge base** (12 articles based on Central Bank of Sri Lanka material, in English with some Sinhala and Tamil) with read-only retrieval under `/api/v1/knowledge`;
 - a text **AI agent** (Google Gemini, Interactions API) under `/api/v1/agent/chat` that answers from the knowledge base and calculates with the finance engine through validated, allowlisted tools;
+- a personal **financial context and financial-literacy** layer for trusted services, behind a token-protected internal API;
+- **ScamShield** under `/api/v1/scamshield/analyze`: a deterministic, source-grounded check of a message, call or offer for scam warning indicators (English, with partial Sinhala and Tamil coverage). It uses no AI, stores nothing and never says content is safe;
 - a **PostgreSQL 18** schema managed by **Prisma migrations**: users, financial profiles and goals, and knowledge sources, articles and translations;
 - a **voice gateway** service (Node.js) that bridges the browser (WebSocket) and **Gemini Live** (native audio), with transcription, barge-in, session resumption and FinVoice tools run through the API, plus `GET /health`;
-- shared `shared`, `contracts`, `config` and `finance-engine` packages.
+- shared `shared`, `contracts`, `config`, `finance-engine` and `scam-shield` packages.
 
-There is no authentication yet (voice is a local/development setup) and no telephony. The target architecture is described in [docs/architecture/system-overview.md](docs/architecture/system-overview.md), the database design in [docs/architecture/database.md](docs/architecture/database.md), the calculation engine in [docs/architecture/financial-calculation-engine.md](docs/architecture/financial-calculation-engine.md), the knowledge base in [docs/architecture/financial-knowledge-base.md](docs/architecture/financial-knowledge-base.md), the AI agent in [docs/architecture/ai-agent.md](docs/architecture/ai-agent.md), browser voice in [docs/architecture/browser-voice.md](docs/architecture/browser-voice.md) and the API in [docs/api/domain-api.md](docs/api/domain-api.md).
+There is no authentication yet (voice is a local/development setup) and no telephony. The target architecture is described in [docs/architecture/system-overview.md](docs/architecture/system-overview.md), the database design in [docs/architecture/database.md](docs/architecture/database.md), the calculation engine in [docs/architecture/financial-calculation-engine.md](docs/architecture/financial-calculation-engine.md), the knowledge base in [docs/architecture/financial-knowledge-base.md](docs/architecture/financial-knowledge-base.md), the AI agent in [docs/architecture/ai-agent.md](docs/architecture/ai-agent.md), browser voice in [docs/architecture/browser-voice.md](docs/architecture/browser-voice.md), ScamShield in [docs/architecture/scam-shield.md](docs/architecture/scam-shield.md) and the API in [docs/api/domain-api.md](docs/api/domain-api.md).
 
 ## Repository structure
 
@@ -31,6 +33,7 @@ finvoice/
 │   ├── shared/           Framework-agnostic shared types (e.g. ServiceHealth)
 │   ├── contracts/        API request schemas and response types (shared by API and clients)
 │   ├── finance-engine/   Deterministic financial calculations (exact decimals, no framework)
+│   ├── scam-shield/      Deterministic scam warning-indicator engine (no AI, no network)
 │   └── config/           Validated environment configuration for each service
 ├── infrastructure/
 │   ├── docker/           Container build files (future)
@@ -137,6 +140,16 @@ Invoke-RestMethod -Method Post "$api/agent/chat" -ContentType "application/json"
   -Body '{"message":"What is an emergency fund?","language":"EN"}'
 ```
 
+ScamShield checks a message for scam warning indicators. It needs no Gemini key and stores nothing. Use made-up text, never real personal data:
+
+```powershell
+Invoke-RestMethod -Method Post "$api/scamshield/analyze" -ContentType "application/json" `
+  -Body '{"content":"Your account will be closed. Send us your OTP now.","language":"EN","sourceType":"MESSAGE"}'
+# riskLevel HIGH, indicators CREDENTIAL_REQUEST and URGENCY_PRESSURE, actions DO_NOT_SHARE_CREDENTIALS, …
+```
+
+The result lists warning indicators, not a verdict. It never says content is safe. See [docs/architecture/scam-shield.md](docs/architecture/scam-shield.md).
+
 ### Talking to FinVoice (browser voice)
 
 Voice needs, in your root `.env`:
@@ -222,5 +235,7 @@ Environment variables are documented in [.env.example](.env.example) and validat
 - [Financial knowledge base](docs/architecture/financial-knowledge-base.md): sources, translations, review dates, retrieval, and why there is no RAG yet
 - [AI agent](docs/architecture/ai-agent.md): Gemini integration, tools, validation, safety rules and API-key security
 - [Browser voice](docs/architecture/browser-voice.md): WebSocket protocol, audio formats, Gemini Live, interruption, tools, sessions and security
+- [Personal financial context](docs/architecture/personal-financial-context.md): the internal user-context API and literacy profile
+- [ScamShield](docs/architecture/scam-shield.md): deterministic scam warning indicators, sources, risk levels, privacy and governance
 - [API endpoints](docs/api/README.md) and the [domain API reference](docs/api/domain-api.md)
 - [ADR 0001: Repository foundation](docs/decisions/0001-repository-foundation.md): why the foundation looks the way it does

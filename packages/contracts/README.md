@@ -31,6 +31,7 @@ The full API reference is [docs/api/domain-api.md](../../docs/api/domain-api.md)
 - Group contracts by domain in their own module (for example `src/<domain>.ts`) and re-export them from `src/index.ts`.
 - Contracts describe the wire format only. Keep persistence models and business logic out of this package. Rules that need stored data (for example "current amount must not exceed the stored target") belong in the API services.
 - Request objects are strict: unknown properties are rejected.
+- ScamShield codes, risk levels and the content limit are defined once, in `@finvoice/scam-shield`, and imported by `scamShieldAnalyzeRequestSchema`.
 - Money is always a decimal string, never a number. The money format and calculation limits are defined once, in `@finvoice/finance-engine`, and imported here, so they are not duplicated.
 - Calculation requests carry inputs only. Result fields (`monthlyPayment`, `savingsRate`, …) are rejected, so a client can never supply a figure the server should calculate.
 - Treat exported contracts as a public API: prefer additive changes and document breaking changes in `docs/decisions/`.
