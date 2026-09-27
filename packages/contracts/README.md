@@ -3,7 +3,8 @@
 The single source of truth for the shapes of data that cross a service boundary:
 
 - request/response bodies of the backend API (`apps/api`), consumed by the web app and the voice gateway;
-- definitions of tools the voice agent can call (added in a later step).
+- the input contracts of the agent's tools, used by the text agent and by voice;
+- the browser voice WebSocket protocol and the internal voice endpoints.
 
 ## Contents
 
@@ -16,6 +17,7 @@ The single source of truth for the shapes of data that cross a service boundary:
 | `src/calculations.ts`       | Loan, savings and budget calculation request schemas and response types                             |
 | `src/knowledge.ts`          | Knowledge query schemas and article, source, search and category response types                     |
 | `src/agent.ts`              | Agent chat request/response and the input contracts of the agent's tools                            |
+| `src/voice.ts`              | Browser voice WebSocket messages, audio format constants, internal voice endpoint contracts         |
 
 Request schemas are [zod](https://zod.dev) schemas. zod implements [Standard Schema](https://standardschema.dev), which NestJS uses to validate requests (`@Body({ schema })`). The same schemas can validate data on the client side before a request is sent, but the API always validates again: client-side checks are a convenience, never a guarantee.
 

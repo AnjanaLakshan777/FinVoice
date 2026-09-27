@@ -31,6 +31,8 @@ Users, financial profiles, financial goals, financial calculations, financial-li
 
 Health checks are not versioned and stay at the root, for load balancers and orchestrators.
 
+The token-protected internal endpoints used by the voice gateway (`/internal/voice/session-setup`, `/internal/voice/tools/execute`) are documented in [domain-api.md](domain-api.md#internal-voice-endpoints-not-part-of-apiv1).
+
 ### `GET /health`
 
 Liveness check: the process is up. It does not check dependencies. Returns `200 OK`:
@@ -71,6 +73,10 @@ Liveness check. Returns `200 OK`:
 }
 ```
 
-Any other path returns `404 Not Found`.
+Any other path returns `404 Not Found`. It does not depend on Gemini or the API.
+
+### WebSocket `/voice`
+
+The browser voice connection (`ws://127.0.0.1:4100/voice`). The handshake is accepted only from an Origin listed in `VOICE_WEB_ORIGIN` (otherwise `403`); other paths get `404`. The JSON message protocol, audio formats, error codes and limits are documented in [browser-voice.md](../architecture/browser-voice.md#4-websocket-protocol).
 
 Health responses match the `ServiceHealth` type, and readiness responses match the `ServiceReadiness` type, both in `packages/shared`.

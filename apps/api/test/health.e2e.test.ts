@@ -14,6 +14,7 @@ const TEST_CONFIG: ApiConfig = {
   port: 0,
   database: { url: "postgresql://unused:unused@127.0.0.1:1/unused" },
   gemini: { apiKey: null, model: "gemini-test-model" },
+  internal: { token: null },
 };
 
 describe("health endpoints", () => {

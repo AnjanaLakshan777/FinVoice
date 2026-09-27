@@ -1,0 +1,144 @@
+.page {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+.intro {
+  color: #444;
+}
+
+.console {
+  display: grid;
+  gap: 1rem;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.field {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.controls select,
+.controls button {
+  font: inherit;
+  padding: 0.5rem 0.9rem;
+}
+
+.start {
+  font-weight: 600;
+}
+
+.status {
+  display: flex;
+  gap: 2rem;
+  margin: 0;
+}
+
+.status dt {
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.status dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.tool {
+  margin: 0;
+  color: #1a4d8f;
+}
+
+.error {
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid #b00020;
+  background: #fdecee;
+  color: #7a0016;
+}
+
+.latest p {
+  margin: 0.25rem 0;
+}
+
+.transcriptTitle {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.empty {
+  margin: 0;
+  color: #666;
+}
+
+.transcript {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.user,
+.finvoice {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+}
+
+.user {
+  background: #eef3f8;
+}
+
+.finvoice {
+  background: #eef8f0;
+}
+
+.speaker {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #555;
+}
+
+.diagnostics {
+  font-size: 0.85rem;
+  color: #444;
+}
+
+.diagnostics dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.2rem 1rem;
+  margin: 0.5rem 0 0;
+}
+
+.diagnostics dl > div {
+  display: contents;
+}
+
+.diagnostics dd {
+  margin: 0;
+  font-family: ui-monospace, monospace;
+}
+
+.notice {
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid #b58a00;
+  background: #fff8e1;
+  color: #5c4500;
+}
+
+.audioLine {
+  margin: 0.5rem 0;
+  font-family: ui-monospace, monospace;
+}

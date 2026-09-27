@@ -1,6 +1,6 @@
 # FinVoice system overview
 
-> **Status:** Step 6 (AI agent, text). The repository structure, service skeletons, health endpoints, the core database tables, a validated REST API for users, financial profiles and goals ([domain-api.md](../api/domain-api.md)), a deterministic calculation engine for loans, savings and budgets ([financial-calculation-engine.md](financial-calculation-engine.md)) a curated, source-backed knowledge base with read-only retrieval ([financial-knowledge-base.md](financial-knowledge-base.md)) and a text AI agent that uses them through allowlisted tools ([ai-agent.md](ai-agent.md)) exist. Everything else in this document describes the **intended** architecture and will be built in later steps. The database design is documented in [database.md](database.md).
+> **Status:** Step 7 (browser voice). The repository structure, service skeletons, health endpoints, the core database tables, a validated REST API for users, financial profiles and goals ([domain-api.md](../api/domain-api.md)), a deterministic calculation engine for loans, savings and budgets ([financial-calculation-engine.md](financial-calculation-engine.md)), a curated, source-backed knowledge base with read-only retrieval ([financial-knowledge-base.md](financial-knowledge-base.md)), a text AI agent that uses them through allowlisted tools ([ai-agent.md](ai-agent.md)) and a local/development real-time browser voice experience over Gemini Live ([browser-voice.md](browser-voice.md)) exist. Everything else in this document describes the **intended** architecture and will be built in later steps. The database design is documented in [database.md](database.md).
 
 ## Purpose
 
@@ -59,7 +59,19 @@ PostgreSQL
 
 The web application talks to the Backend API **independently** of the voice path. It does not route requests through the voice gateway, Asterisk or Gemini Live. Web and voice are two separate clients of the same API.
 
-Browser-based voice conversations will also need a real-time audio connection to the voice gateway. That transport (for example WebSocket or WebRTC) will be decided and recorded in `docs/decisions/` when it is built. Even then, all business data still flows through the Backend API.
+## Browser voice path (Step 7)
+
+```text
+Browser (/voice)
+   ↓  WebSocket: JSON messages, 16 kHz PCM up, 24 kHz PCM down
+Voice Gateway          (apps/voice-gateway)
+   ↓                                   ↓  internal HTTP + shared token
+Gemini Live                            Backend API (apps/api, /internal/voice/*)
+   (tool calls go back through            ↓  AgentToolRegistry (Step 6)
+    the gateway to the API)            finance engine · knowledge service → PostgreSQL
+```
+
+Browser voice uses a WebSocket between the browser and the voice gateway. The gateway holds the Gemini API key, opens one Gemini Live session per browser connection, and runs the model's tool calls through two token-protected internal API endpoints that reuse the Step 6 tool registry, so the gateway has no business logic and no database access. The browser only chooses a language and streams audio; it never receives the key. There is no authentication yet, so this is a local/development setup. Details: [browser-voice.md](browser-voice.md).
 
 ## Architectural principles
 
@@ -72,20 +84,20 @@ Browser-based voice conversations will also need a real-time audio connection to
 
 ## Repository mapping
 
-| Path                        | Component                                                | Step 1 state                                  |
-| --------------------------- | -------------------------------------------------------- | --------------------------------------------- |
-| `apps/web`                  | Web application (Next.js)                                | Placeholder homepage                          |
-| `apps/api`                  | Backend API (NestJS)                                     | Health + domain API `/api/v1`                 |
-| `apps/voice-gateway`        | Voice gateway (Node.js)                                  | `GET /health` only                            |
-| `packages/shared`           | Framework-agnostic shared types and utilities            | `ServiceHealth` type                          |
-| `packages/contracts`        | API and tool contracts                                   | Domain API request schemas and response types |
-| `packages/finance-engine`   | Deterministic financial calculations                     | Loan, savings and budget calculators          |
-| `apps/api/prisma/knowledge` | Curated knowledge content and insert-only seed           | 12 CBSL-sourced articles                      |
-| `apps/api/src/ai`           | Text AI agent: Gemini adapter, tool registry, agent      | `POST /api/v1/agent/chat`                     |
-| `packages/config`           | Environment parsing and validation                       | API and voice gateway loaders                 |
-| `docker-compose.yml`        | Local infrastructure                                     | PostgreSQL 18                                 |
-| `infrastructure/`           | Container, database and (later) telephony infrastructure | Placeholders                                  |
+| Path                        | Component                                                | Step 1 state                                        |
+| --------------------------- | -------------------------------------------------------- | --------------------------------------------------- |
+| `apps/web`                  | Web application (Next.js)                                | Homepage and `/voice` page                          |
+| `apps/api`                  | Backend API (NestJS)                                     | Health + domain API `/api/v1`                       |
+| `apps/voice-gateway`        | Voice gateway (Node.js)                                  | `GET /health`, browser voice WebSocket `/voice`     |
+| `packages/shared`           | Framework-agnostic shared types and utilities            | `ServiceHealth` type                                |
+| `packages/contracts`        | API and tool contracts                                   | Domain API request schemas and response types       |
+| `packages/finance-engine`   | Deterministic financial calculations                     | Loan, savings and budget calculators                |
+| `apps/api/prisma/knowledge` | Curated knowledge content and insert-only seed           | 12 CBSL-sourced articles                            |
+| `apps/api/src/ai`           | Text AI agent: Gemini adapter, tool registry, agent      | `POST /api/v1/agent/chat`, internal voice endpoints |
+| `packages/config`           | Environment parsing and validation                       | API and voice gateway loaders                       |
+| `docker-compose.yml`        | Local infrastructure                                     | PostgreSQL 18                                       |
+| `infrastructure/`           | Container, database and (later) telephony infrastructure | Placeholders                                        |
 
 ## Not yet built
 
-In later steps: Asterisk and SIP configuration, the AudioSocket server, Gemini Live integration (reusing the Step 6 tool registry), RAG over the knowledge base, knowledge administration, scam detection, authentication and authorisation, and deployment.
+In later steps: Asterisk and SIP configuration, the AudioSocket server (reusing the Step 7 voice session and Gemini Live adapter), RAG over the knowledge base, knowledge administration, scam detection, authentication and authorisation, and deployment.

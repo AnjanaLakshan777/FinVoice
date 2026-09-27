@@ -14,7 +14,12 @@ export type ApiResponse<T = unknown> = { status: number; body: T; text: string }
 export type TestApi = {
   /** The application's own PrismaService, for arranging data and checking persistence. */
   prisma: PrismaService;
-  request<T = unknown>(method: string, path: string, body?: unknown): Promise<ApiResponse<T>>;
+  request<T = unknown>(
+    method: string,
+    path: string,
+    body?: unknown,
+    headers?: Record<string, string>,
+  ): Promise<ApiResponse<T>>;
   close(): Promise<void>;
 };
 
@@ -24,6 +29,8 @@ export type TestApiOptions = {
   languageModel?: LanguageModel;
   /** Gemini settings; by default no key is configured. */
   gemini?: ApiConfig["gemini"];
+  /** Shared token for the internal voice endpoints; by default none (they answer 503). */
+  internalToken?: string;
 };
 
 /**
@@ -35,6 +42,7 @@ export async function startTestApi(options: TestApiOptions | string = {}): Promi
     databaseUrl = inject("databaseUrl"),
     languageModel,
     gemini,
+    internalToken,
   } = typeof options === "string" ? { databaseUrl: options } : options;
   const config: ApiConfig = {
     nodeEnv: "test",
@@ -42,6 +50,7 @@ export async function startTestApi(options: TestApiOptions | string = {}): Promi
     port: 0,
     database: { url: databaseUrl },
     gemini: gemini ?? { apiKey: null, model: "gemini-test-model" },
+    internal: { token: internalToken ?? null },
   };
   let builder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(API_CONFIG)
@@ -57,12 +66,20 @@ export async function startTestApi(options: TestApiOptions | string = {}): Promi
 
   return {
     prisma: app.get(PrismaService),
-    async request<T>(method: string, path: string, body?: unknown): Promise<ApiResponse<T>> {
+    async request<T>(
+      method: string,
+      path: string,
+      body?: unknown,
+      headers: Record<string, string> = {},
+    ): Promise<ApiResponse<T>> {
       const response = await fetch(new URL(path, baseUrl), {
         method,
         ...(body === undefined
-          ? {}
-          : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+          ? { headers }
+          : {
+              headers: { "content-type": "application/json", ...headers },
+              body: JSON.stringify(body),
+            }),
       });
       const text = await response.text();
       return { status: response.status, body: (text ? JSON.parse(text) : undefined) as T, text };

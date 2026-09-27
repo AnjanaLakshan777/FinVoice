@@ -204,13 +204,13 @@ Model knowledge can be outdated, unsourced or simply wrong. For regulation, depo
 
 Each request is independent: one message in, one answer out. No conversation, message or session tables exist, and nothing is stored at Google (`store: false`). This avoids keeping personal financial conversations before retention, consent and authentication are designed. Multi-turn sessions will come with the voice/session architecture.
 
-## 20. Future connection to the Gemini Live API
+## 20. Connection to the Gemini Live API
 
-The Live API (Step 7) uses the same function-calling pattern: the model requests a function, the server executes it and returns the result. The Live agent will reuse:
+Browser voice (Step 7, [browser-voice.md](browser-voice.md)) uses the same function-calling pattern: the model requests a function, the server executes it and returns the result. The voice gateway gets everything from the API through token-protected internal endpoints:
 
 - `AgentToolRegistry.declarations()` for the tool definitions;
 - `AgentToolRegistry.execute()` for validated, allowlisted execution;
-- the contracts, finance engine, knowledge service and the safety rules in the system instruction.
+- `buildLiveSystemInstruction(language)`, which shares every rule of the text instruction and changes only the language and speaking-style sections.
 
 Only the transport changes: audio over a Live session instead of text over HTTP.
 
@@ -218,7 +218,7 @@ Only the transport changes: audio over a Live session instead of text over HTTP.
 
 **Gemini API key:**
 
-- **Server-side only.** It lives in the API server's environment (`GEMINI_API_KEY`) and is read through `@finvoice/config`.
+- **Server-side only.** It lives in the API server's and the voice gateway's environment (`GEMINI_API_KEY`) and is read through `@finvoice/config`.
 - **Never exposed to clients.** It is not in web or browser code or any `NEXT_PUBLIC_*` variable, and never sent to voice or mobile clients.
 - **Never logged or returned.** It does not appear in responses, logs or error messages; config validation errors do not echo values, and SDK error messages are dropped.
 - **Never committed.** `.env` is git-ignored, and `.env.example` has an empty placeholder.

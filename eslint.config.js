@@ -47,6 +47,16 @@ export default defineConfig([
     extends: [tseslint.configs.disableTypeChecked],
   },
 
+  // AudioWorklet modules run in AudioWorkletGlobalScope, not in a window.
+  {
+    files: ["apps/web/public/**/*-worklet.js"],
+    languageOptions: { globals: globals.audioWorklet },
+    rules: {
+      // Crashes on class methods in plain JS parsed by the Next.js config; TS-only concern anyway.
+      "@typescript-eslint/no-useless-constructor": "off",
+    },
+  },
+
   // Must stay last: turns off stylistic rules that conflict with Prettier.
   prettier,
 ]);

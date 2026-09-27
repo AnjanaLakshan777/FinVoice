@@ -10,14 +10,19 @@
     "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
     "start": "node --enable-source-maps dist/main.js",
     "typecheck": "tsc --project tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "probe:live-text": "tsx --env-file-if-exists=../../.env scripts/live-text-probe.ts"
   },
   "dependencies": {
     "@finvoice/config": "workspace:*",
-    "@finvoice/shared": "workspace:*"
+    "@finvoice/contracts": "workspace:*",
+    "@finvoice/shared": "workspace:*",
+    "@google/genai": "2.24.0",
+    "ws": "8.21.3"
   },
   "devDependencies": {
     "@types/node": "24.13.6",
+    "@types/ws": "8.18.1",
     "tsx": "4.23.15",
     "typescript": "6.0.3",
     "vitest": "5.0.1"

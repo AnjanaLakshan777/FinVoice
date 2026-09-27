@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   ConfigValidationError,
+  DEFAULT_GEMINI_LIVE_MODEL,
+  DEFAULT_GEMINI_LIVE_VOICE,
   loadApiConfig,
   loadDatabaseConfig,
   loadVoiceGatewayConfig,
@@ -18,6 +20,7 @@ describe("loadApiConfig", () => {
       port: 4000,
       database: { url: DATABASE_URL },
       gemini: { apiKey: null, model: "gemini-3.8-flash" },
+      internal: { token: null },
     });
   });
 
@@ -35,6 +38,7 @@ describe("loadApiConfig", () => {
       port: 8080,
       database: { url: DATABASE_URL },
       gemini: { apiKey: null, model: "gemini-3.8-flash" },
+      internal: { token: null },
     });
   });
 
@@ -100,14 +104,108 @@ describe("loadDatabaseConfig", () => {
   });
 });
 
+describe("internal API token", () => {
+  const token = "t".repeat(32);
+
+  it("is optional for the API and read when set", () => {
+    expect(loadApiConfig({ DATABASE_URL, INTERNAL_API_TOKEN: token }).internal).toEqual({ token });
+    expect(loadApiConfig({ DATABASE_URL, INTERNAL_API_TOKEN: "" }).internal.token).toBeNull();
+  });
+
+  it("rejects a short token without echoing it", () => {
+    let error: unknown;
+    try {
+      loadApiConfig({ DATABASE_URL, INTERNAL_API_TOKEN: "short-secret-value" });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(ConfigValidationError);
+    expect((error as Error).message).toMatch(/INTERNAL_API_TOKEN/);
+    expect((error as Error).message).not.toContain("short-secret-value");
+  });
+});
+
 describe("loadVoiceGatewayConfig", () => {
   it("applies local development defaults", () => {
     expect(loadVoiceGatewayConfig({})).toEqual({
       nodeEnv: "development",
       host: "127.0.0.1",
       port: 4100,
+      allowedOrigins: ["http://localhost:3000", "http://127.0.0.1:3000"],
+      maxSessions: 10,
+      gemini: {
+        apiKey: null,
+        liveModel: DEFAULT_GEMINI_LIVE_MODEL,
+        liveVoice: DEFAULT_GEMINI_LIVE_VOICE,
+      },
+      internalApi: { url: "http://127.0.0.1:4000", token: null },
+    });
+    expect(DEFAULT_GEMINI_LIVE_MODEL).toBe("gemini-3.8-live");
+    expect(DEFAULT_GEMINI_LIVE_VOICE).toBe("Kore");
+  });
+
+  it("reads provided values", () => {
+    const token = "g".repeat(40);
+    expect(
+      loadVoiceGatewayConfig({
+        VOICE_GATEWAY_PORT: "4200",
+        VOICE_WEB_ORIGIN: " https://finvoice.example , http://localhost:3001 ",
+        VOICE_MAX_SESSIONS: "3",
+        GEMINI_API_KEY: "fake-gemini-key-for-tests",
+        GEMINI_LIVE_MODEL: "gemini-live-test",
+        GEMINI_LIVE_VOICE: "Puck",
+        INTERNAL_API_URL: "http://api.internal:4000/",
+        INTERNAL_API_TOKEN: token,
+      }),
+    ).toMatchObject({
+      port: 4200,
+      allowedOrigins: ["https://finvoice.example", "http://localhost:3001"],
+      maxSessions: 3,
+      gemini: {
+        apiKey: "fake-gemini-key-for-tests",
+        liveModel: "gemini-live-test",
+        liveVoice: "Puck",
+      },
+      internalApi: { url: "http://api.internal:4000", token },
     });
   });
+
+  it.each([
+    ["a wildcard origin", "*"],
+    ["an origin with a path", "http://localhost:3000/voice"],
+    ["a non-http origin", "ws://localhost:3000"],
+    ["an empty list", " , "],
+  ])("rejects %s in VOICE_WEB_ORIGIN", (_case, value) => {
+    expect(() => loadVoiceGatewayConfig({ VOICE_WEB_ORIGIN: value })).toThrow(
+      ConfigValidationError,
+    );
+  });
+
+  it("rejects an invalid Live model name without echoing the key", () => {
+    let error: unknown;
+    try {
+      loadVoiceGatewayConfig({
+        GEMINI_API_KEY: "secret-key-value",
+        GEMINI_LIVE_MODEL: "bad model",
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(ConfigValidationError);
+    expect((error as Error).message).toMatch(/GEMINI_LIVE_MODEL/);
+    expect((error as Error).message).not.toContain("secret-key-value");
+  });
+
+  it.each(["", "Kore; rm", "a", "Kore Puck", "x".repeat(41)])(
+    "rejects the voice name %j",
+    (voice) => {
+      expect(() => loadVoiceGatewayConfig({ GEMINI_LIVE_VOICE: voice })).toThrow(
+        ConfigValidationError,
+      );
+    },
+  );
 
   it("rejects an unknown NODE_ENV", () => {
     expect(() => loadVoiceGatewayConfig({ NODE_ENV: "staging" })).toThrow(ConfigValidationError);

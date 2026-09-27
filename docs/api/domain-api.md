@@ -473,6 +473,17 @@ Each request is independent, with no conversation history, and can take several 
 | 502    | `BAD_GATEWAY`         | The AI provider failed or returned an unusable response                                          |
 | 503    | `SERVICE_UNAVAILABLE` | The agent is not configured (no `GEMINI_API_KEY`), or the AI provider is temporarily unavailable |
 
+## Internal voice endpoints (not part of `/api/v1`)
+
+Two endpoints serve the voice gateway only. They are outside the public API (no `/api/v1` prefix) and require the header `x-finvoice-internal-token` with the value of `INTERNAL_API_TOKEN`. Without a configured token they answer `503 SERVICE_UNAVAILABLE`; with a missing or wrong token, `401 UNAUTHORIZED` (checked before any validation). Browsers and other clients must never call them or hold the token.
+
+| Method | Path                                        | Success | Purpose                                                                                             |
+| ------ | ------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------- |
+| `GET`  | `/internal/voice/session-setup?language=SI` | 200     | The Live session setup: `{ agentVersion, language, systemInstruction, tools, maxToolCallsPerTurn }` |
+| `POST` | `/internal/voice/tools/execute`             | 200     | Run one model tool call: body `{ name, arguments, language }`, response `{ tool, result, isError }` |
+
+Tool execution uses the same registry as `POST /agent/chat`: unknown tools, invalid arguments and failing tools are `200` responses with `isError: true` and a structured `result.error` (`UNKNOWN_TOOL`, `INVALID_ARGUMENTS`, `TOOL_FAILED`) for the model. A malformed envelope (missing `arguments`, unknown `language`, extra fields) is a `400 VALIDATION_ERROR`. See [browser-voice.md](../architecture/browser-voice.md#13-tool-calling).
+
 ## Errors
 
 Every error from the API (domain routes, unknown routes and malformed requests) has the same shape:
@@ -493,10 +504,11 @@ Every error from the API (domain routes, unknown routes and malformed requests) 
 | 400    | `VALIDATION_ERROR`    | Invalid body, query or path id, unknown property, or a broken domain rule (`currentAmount` > `targetAmount`) |
 | 400    | `BAD_REQUEST`         | The request could not be parsed (for example malformed JSON)                                                 |
 | 404    | `NOT_FOUND`           | The user, profile or goal does not exist or belongs to another user; unknown route                           |
+| 401    | `UNAUTHORIZED`        | Internal voice endpoints only: missing or wrong internal token                                               |
 | 409    | `CONFLICT`            | Phone number already registered; the data changed concurrently (retrying may succeed)                        |
 | 413    | `PAYLOAD_TOO_LARGE`   | Request body over 100 kB                                                                                     |
 | 502    | `BAD_GATEWAY`         | The AI provider failed or returned an unusable response (agent only)                                         |
-| 503    | `SERVICE_UNAVAILABLE` | The database cannot be reached; the AI agent is not configured or temporarily unavailable                    |
+| 503    | `SERVICE_UNAVAILABLE` | The database cannot be reached; the AI agent or the internal voice endpoints are not configured              |
 | 500    | `INTERNAL_ERROR`      | Anything unexpected                                                                                          |
 
 Error responses never contain SQL, database or Prisma messages, constraint names, stack traces, connection strings or credentials. Unexpected errors are logged on the server, with connection strings redacted.

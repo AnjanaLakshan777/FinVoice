@@ -4,19 +4,19 @@ FinVoice is a voice-first financial inclusion and financial literacy platform fo
 
 ## Current status
 
-**Step 6: AI agent (text).** This repository has:
+**Step 7: browser voice.** This repository has:
 
 - a pnpm monorepo with strict TypeScript, ESLint, Prettier, Vitest and CI;
-- a placeholder **web app** (Next.js);
+- a **web app** (Next.js) with a `/voice` page for real-time voice conversations;
 - a **backend API** (NestJS) with a validated REST API for users, financial profiles and financial goals under `/api/v1`, plus liveness (`GET /health`) and database readiness (`GET /health/ready`) checks;
 - a framework-independent **financial calculation engine** (loan repayment, savings plan, budget summary) with exact decimal arithmetic, exposed under `/api/v1/calculations`;
 - a curated, source-backed **financial knowledge base** (12 articles based on Central Bank of Sri Lanka material, in English with some Sinhala and Tamil) with read-only retrieval under `/api/v1/knowledge`;
 - a text **AI agent** (Google Gemini, Interactions API) under `/api/v1/agent/chat` that answers from the knowledge base and calculates with the finance engine through validated, allowlisted tools;
 - a **PostgreSQL 18** schema managed by **Prisma migrations**: users, financial profiles and goals, and knowledge sources, articles and translations;
-- a **voice gateway** service (Node.js) with `GET /health`;
+- a **voice gateway** service (Node.js) that bridges the browser (WebSocket) and **Gemini Live** (native audio), with transcription, barge-in, session resumption and FinVoice tools run through the API, plus `GET /health`;
 - shared `shared`, `contracts`, `config` and `finance-engine` packages.
 
-There is no authentication yet, and no voice integration or telephony. The target architecture is described in [docs/architecture/system-overview.md](docs/architecture/system-overview.md), the database design in [docs/architecture/database.md](docs/architecture/database.md), the calculation engine in [docs/architecture/financial-calculation-engine.md](docs/architecture/financial-calculation-engine.md), the knowledge base in [docs/architecture/financial-knowledge-base.md](docs/architecture/financial-knowledge-base.md), the AI agent in [docs/architecture/ai-agent.md](docs/architecture/ai-agent.md) and the API in [docs/api/domain-api.md](docs/api/domain-api.md).
+There is no authentication yet (voice is a local/development setup) and no telephony. The target architecture is described in [docs/architecture/system-overview.md](docs/architecture/system-overview.md), the database design in [docs/architecture/database.md](docs/architecture/database.md), the calculation engine in [docs/architecture/financial-calculation-engine.md](docs/architecture/financial-calculation-engine.md), the knowledge base in [docs/architecture/financial-knowledge-base.md](docs/architecture/financial-knowledge-base.md), the AI agent in [docs/architecture/ai-agent.md](docs/architecture/ai-agent.md), browser voice in [docs/architecture/browser-voice.md](docs/architecture/browser-voice.md) and the API in [docs/api/domain-api.md](docs/api/domain-api.md).
 
 ## Repository structure
 
@@ -98,12 +98,12 @@ pnpm db:seed             # optional: loads fake demo users and goals (local data
 
 Each command below builds the shared packages first when needed. In development, the API and the voice gateway read the root `.env`. The API requires `DATABASE_URL`. Other variables have local defaults.
 
-| Application   | Command                  | URL                          |
-| ------------- | ------------------------ | ---------------------------- |
-| Web app       | `pnpm dev:web`           | http://localhost:3000        |
-| Backend API   | `pnpm dev:api`           | http://127.0.0.1:4000/health |
-| Voice gateway | `pnpm dev:voice-gateway` | http://127.0.0.1:4100/health |
-| All three     | `pnpm dev`               | as above                     |
+| Application   | Command                  | URL                                                                         |
+| ------------- | ------------------------ | --------------------------------------------------------------------------- |
+| Web app       | `pnpm dev:web`           | http://localhost:3000 (voice: http://localhost:3000/voice)                  |
+| Backend API   | `pnpm dev:api`           | http://127.0.0.1:4000/health                                                |
+| Voice gateway | `pnpm dev:voice-gateway` | http://127.0.0.1:4100/health (voice WebSocket: `ws://127.0.0.1:4100/voice`) |
+| All three     | `pnpm dev`               | as above                                                                    |
 
 To confirm the API can reach PostgreSQL, open http://127.0.0.1:4000/health/ready. It returns `200` with `"database": "up"`, or `503` if the database is unreachable.
 
@@ -136,6 +136,21 @@ The AI agent needs `GEMINI_API_KEY` in your `.env` (server-side only; without it
 Invoke-RestMethod -Method Post "$api/agent/chat" -ContentType "application/json" `
   -Body '{"message":"What is an emergency fund?","language":"EN"}'
 ```
+
+### Talking to FinVoice (browser voice)
+
+Voice needs, in your root `.env`:
+
+- `GEMINI_API_KEY`: used server-side by the voice gateway (never by the browser);
+- `INTERNAL_API_TOKEN`: a random string of at least 32 characters, shared by the API and the voice gateway (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`).
+
+Optional: `GEMINI_LIVE_MODEL` (default `gemini-3.8-live`), `GEMINI_LIVE_VOICE` (the prebuilt voice, default `Kore`), `VOICE_WEB_ORIGIN` (default `http://localhost:3000,http://127.0.0.1:3000`) and, in `apps/web/.env.local`, `NEXT_PUBLIC_VOICE_GATEWAY_URL` (default `ws://127.0.0.1:4100/voice`).
+
+1. Start PostgreSQL and load the knowledge base (`pnpm db:up`, `pnpm db:migrate`, `pnpm db:seed:knowledge`).
+2. Start the API, the voice gateway and the web app: `pnpm dev` (or `pnpm dev:api`, `pnpm dev:voice-gateway` and `pnpm dev:web` in three terminals).
+3. Open http://localhost:3000/voice, choose Sinhala, Tamil or English, press **Start voice** and allow the microphone. Speak; FinVoice answers aloud and the transcript appears on the page. Speak over it to interrupt. Press **Stop** to end.
+
+Nothing is recorded. Use headphones to avoid FinVoice hearing itself. The voice gateway has no authentication yet: keep it on `127.0.0.1` and do not expose it publicly. See [docs/architecture/browser-voice.md](docs/architecture/browser-voice.md).
 
 Money is always sent as a string (`"150000.00"`), never as a number. See [docs/api/domain-api.md](docs/api/domain-api.md) for every endpoint, rule and error, and for curl examples.
 
@@ -206,5 +221,6 @@ Environment variables are documented in [.env.example](.env.example) and validat
 - [Financial calculation engine](docs/architecture/financial-calculation-engine.md): formulas, rounding policy, and why AI never does the maths
 - [Financial knowledge base](docs/architecture/financial-knowledge-base.md): sources, translations, review dates, retrieval, and why there is no RAG yet
 - [AI agent](docs/architecture/ai-agent.md): Gemini integration, tools, validation, safety rules and API-key security
+- [Browser voice](docs/architecture/browser-voice.md): WebSocket protocol, audio formats, Gemini Live, interruption, tools, sessions and security
 - [API endpoints](docs/api/README.md) and the [domain API reference](docs/api/domain-api.md)
 - [ADR 0001: Repository foundation](docs/decisions/0001-repository-foundation.md): why the foundation looks the way it does

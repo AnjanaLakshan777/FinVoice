@@ -5,8 +5,8 @@ import type { ServiceHealth } from "@finvoice/shared";
 export const VOICE_GATEWAY_SERVICE_NAME = "finvoice-voice-gateway";
 
 /**
- * Minimal HTTP server exposing `GET /health` for liveness probes.
- * Real-time audio transport is added in a later step and is not served here.
+ * HTTP server exposing `GET /health` for liveness probes. It does not depend on Gemini or the
+ * API. The voice WebSocket endpoint is attached to this server (see voice-gateway-server.ts).
  */
 export function createHealthServer(): Server {
   return createServer((request, response) => {

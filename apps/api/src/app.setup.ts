@@ -5,7 +5,10 @@ import type { NestExpressApplication } from "@nestjs/platform-express";
 import { ApiExceptionFilter } from "./common/api-exception.filter.js";
 import { RequestValidationPipe } from "./common/request-validation.pipe.js";
 
-/** Version prefix of the domain API. Health checks stay at the root for probes. */
+/**
+ * Version prefix of the domain API. Health checks stay at the root for probes, and the internal
+ * service-to-service endpoints stay outside the public API under /internal.
+ */
 export const API_PREFIX = "api/v1";
 
 /**
@@ -17,6 +20,8 @@ export function configureApp(app: NestExpressApplication): void {
     exclude: [
       { path: "health", method: RequestMethod.GET },
       { path: "health/ready", method: RequestMethod.GET },
+      { path: "internal/voice/session-setup", method: RequestMethod.GET },
+      { path: "internal/voice/tools/execute", method: RequestMethod.POST },
     ],
   });
   app.useGlobalPipes(new RequestValidationPipe());
