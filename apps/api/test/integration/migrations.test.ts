@@ -21,6 +21,7 @@ describe("database migrations", () => {
     expect(applied.map((row) => row.migration_name)).toEqual([
       "20260925180300_init_core_domain",
       "20260926081151_knowledge_base",
+      "20260927120000_financial_literacy",
     ]);
 
     const status = runPrisma(["migrate", "status"], databaseUrl);
@@ -140,6 +141,48 @@ describe("database migrations", () => {
         "financial_goals_status_target_date_idx",
       ].sort(),
     );
+  });
+
+  it("creates the financial literacy tables with only the intended constraints and indexes", async () => {
+    const constraints = await prisma.$queryRaw<{ name: string }[]>`
+      SELECT conname AS name FROM pg_constraint
+      WHERE conrelid IN ('financial_literacy_profiles'::regclass,
+                         'financial_literacy_topic_progress'::regclass)
+        AND contype IN ('p', 'f', 'c')`;
+    const indexes = await prisma.$queryRaw<{ name: string }[]>`
+      SELECT indexname AS name FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND tablename IN ('financial_literacy_profiles', 'financial_literacy_topic_progress')`;
+    const enums = await prisma.$queryRaw<{ name: string; values: string }[]>`
+      SELECT t.typname AS name, string_agg(e.enumlabel, ',' ORDER BY e.enumsortorder) AS values
+      FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
+      WHERE t.typname IN ('financial_literacy_level', 'financial_literacy_topic_status')
+      GROUP BY t.typname ORDER BY t.typname`;
+
+    expect(constraints.map((row) => row.name).sort()).toEqual(
+      [
+        "financial_literacy_profiles_pkey",
+        "financial_literacy_profiles_user_id_fkey",
+        "financial_literacy_profiles_assessment_version_format_check",
+        "financial_literacy_topic_progress_pkey",
+        "financial_literacy_topic_progress_user_id_fkey",
+        "financial_literacy_topic_progress_status_timestamps_check",
+        "financial_literacy_topic_progress_completed_after_started_check",
+      ].sort(),
+    );
+    // The unique (user_id, topic) index also serves "all progress of a user": no extra index.
+    expect(indexes.map((row) => row.name).sort()).toEqual(
+      [
+        "financial_literacy_profiles_pkey",
+        "financial_literacy_profiles_user_id_key",
+        "financial_literacy_topic_progress_pkey",
+        "financial_literacy_topic_progress_user_id_topic_key",
+      ].sort(),
+    );
+    expect(enums).toEqual([
+      { name: "financial_literacy_level", values: "BEGINNER,DEVELOPING,CONFIDENT" },
+      { name: "financial_literacy_topic_status", values: "NOT_STARTED,IN_PROGRESS,COMPLETED" },
+    ]);
   });
 
   it("initialises the database with UTF-8 encoding and ICU collation", async () => {

@@ -11,3 +11,5 @@ export * from "./calculations.js";
 export * from "./knowledge.js";
 export * from "./agent.js";
 export * from "./voice.js";
+export * from "./literacy.js";
+export * from "./financial-context.js";

@@ -484,6 +484,27 @@ Two endpoints serve the voice gateway only. They are outside the public API (no 
 
 Tool execution uses the same registry as `POST /agent/chat`: unknown tools, invalid arguments and failing tools are `200` responses with `isError: true` and a structured `result.error` (`UNKNOWN_TOOL`, `INVALID_ARGUMENTS`, `TOOL_FAILED`) for the model. A malformed envelope (missing `arguments`, unknown `language`, extra fields) is a `400 VALIDATION_ERROR`. See [browser-voice.md](../architecture/browser-voice.md#13-tool-calling).
 
+## Internal user-context endpoints (INTERNAL, not part of `/api/v1`)
+
+Personal financial context for trusted FinVoice services only (Step 8). The same token and header as the internal voice endpoints: `x-finvoice-internal-token: <INTERNAL_API_TOKEN>`. The token is checked before anything else, so without it even an unknown user id gets `401` (whether a user exists is not revealed). There is **no public** endpoint for personal context: the public API and agent stay non-personalised until authentication exists. See [personal-financial-context.md](../architecture/personal-financial-context.md).
+
+| Method | Path                                                      | Success | Purpose                                                                                                                                              |
+| ------ | --------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/internal/users/:userId/financial-context`               | 200     | Minimised context: language, timezone, profile amounts, ACTIVE goals, literacy, completeness                                                         |
+| `GET`  | `/internal/users/:userId/literacy-context`                | 200     | Literacy level and stored topic progress                                                                                                             |
+| `PUT`  | `/internal/users/:userId/literacy/profile`                | 200     | Explicit level change: `{ "level", "assessmentVersion", "assessedAt" }` (all required; `assessedAt` ISO 8601 with offset or null, not in the future) |
+| `POST` | `/internal/users/:userId/literacy/topics/:topic/start`    | 200     | Mark a topic IN_PROGRESS (or record activity). No body; server-set times                                                                             |
+| `POST` | `/internal/users/:userId/literacy/topics/:topic/complete` | 200     | Mark a topic COMPLETED. No body; server-set times                                                                                                    |
+
+- **Topics and levels.** `topic` is a knowledge category (`SAVING`, `BUDGETING`, `BORROWING`, `DIGITAL_FINANCE`, `CONSUMER_PROTECTION`, `SCAMS`, `DEPOSIT_PROTECTION`, `GENERAL_FINANCIAL_LITERACY`), and `level` is `BEGINNER`, `DEVELOPING` or `CONFIDENT`.
+- **Minimised responses.** They contain no ids, phone number or record timestamps, and money is a decimal string.
+- **Errors:**
+  - `401 UNAUTHORIZED`: token missing or wrong;
+  - `503 SERVICE_UNAVAILABLE`: no token configured;
+  - `400 VALIDATION_ERROR`: bad user id, topic or body, or unknown fields;
+  - `404 NOT_FOUND`: unknown user;
+  - `409 CONFLICT`: `start` on a completed topic, or a concurrent change.
+
 ## Errors
 
 Every error from the API (domain routes, unknown routes and malformed requests) has the same shape:
@@ -504,7 +525,7 @@ Every error from the API (domain routes, unknown routes and malformed requests) 
 | 400    | `VALIDATION_ERROR`    | Invalid body, query or path id, unknown property, or a broken domain rule (`currentAmount` > `targetAmount`) |
 | 400    | `BAD_REQUEST`         | The request could not be parsed (for example malformed JSON)                                                 |
 | 404    | `NOT_FOUND`           | The user, profile or goal does not exist or belongs to another user; unknown route                           |
-| 401    | `UNAUTHORIZED`        | Internal voice endpoints only: missing or wrong internal token                                               |
+| 401    | `UNAUTHORIZED`        | Internal endpoints only: missing or wrong internal token                                                     |
 | 409    | `CONFLICT`            | Phone number already registered; the data changed concurrently (retrying may succeed)                        |
 | 413    | `PAYLOAD_TOO_LARGE`   | Request body over 100 kB                                                                                     |
 | 502    | `BAD_GATEWAY`         | The AI provider failed or returned an unusable response (agent only)                                         |

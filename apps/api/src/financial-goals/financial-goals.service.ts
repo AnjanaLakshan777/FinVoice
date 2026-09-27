@@ -88,6 +88,30 @@ export class FinancialGoalsService {
     };
   }
 
+  /**
+   * Up to `limit` ACTIVE goals, soonest target date first (goals without one last), and whether
+   * more exist. One query (limit + 1 rows) on the (user_id, status, target_date) index. For
+   * callers that have already checked the user exists (the financial context).
+   */
+  async listActive(
+    userId: string,
+    limit: number,
+  ): Promise<{ goals: FinancialGoalResponse[]; hasMore: boolean }> {
+    const goals = await this.prisma.financialGoal.findMany({
+      where: { userId, status: "ACTIVE" },
+      orderBy: [
+        { targetDate: { sort: "asc", nulls: "last" } },
+        { createdAt: "asc" },
+        { id: "asc" },
+      ],
+      take: limit + 1,
+    });
+    return {
+      goals: goals.slice(0, limit).map(toFinancialGoalResponse),
+      hasMore: goals.length > limit,
+    };
+  }
+
   async get(userId: string, goalId: string): Promise<FinancialGoalResponse> {
     return toFinancialGoalResponse(await this.findOwnedGoal(userId, goalId));
   }

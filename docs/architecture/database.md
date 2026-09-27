@@ -27,9 +27,11 @@ The database belongs to the **backend API** (`apps/api`), which is the only serv
 ```text
 users 1 ──── 0..1 financial_profiles      (financial_profiles.user_id UNIQUE)
 users 1 ──── 0..N financial_goals
+users 1 ──── 0..1 financial_literacy_profiles        (user_id UNIQUE)
+users 1 ──── 0..N financial_literacy_topic_progress  (UNIQUE (user_id, topic))
 ```
 
-Both foreign keys are `ON DELETE CASCADE ON UPDATE RESTRICT`:
+All four foreign keys are `ON DELETE CASCADE ON UPDATE RESTRICT`. The literacy tables (Step 8) are described in [personal-financial-context.md](personal-financial-context.md).
 
 - A profile or goal has no meaning without its user. Deleting a user is reserved for deliberate erasure of their personal data (as Sri Lanka's Personal Data Protection Act allows), and cascading makes that erasure complete.
 - In normal operation a user is deactivated (`status = INACTIVE`), not deleted.
@@ -144,13 +146,15 @@ The database is the last line of defence, not the only one. The domain API valid
 
 Every index has a named query behind it. Indexes are not added speculatively: each one costs write time and storage.
 
-| Index                                            | Columns                        | Serves                                                                                                                                              |
-| ------------------------------------------------ | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `users_pkey`                                     | `id`                           | Lookup by id                                                                                                                                        |
-| `users_phone_number_key` (unique)                | `phone_number`                 | **Identify a caller by phone number**, the main lookup for incoming calls. The unique index also enforces uniqueness, so no second index is needed. |
-| `financial_profiles_user_id_key` (unique)        | `user_id`                      | Load a user's profile; enforces one profile per user; indexes the FK                                                                                |
-| `financial_goals_user_id_status_target_date_idx` | `user_id, status, target_date` | **A user's goals** (leftmost column; also serves the FK for cascading deletes), **a user's goals with a given status**, sorted by target date       |
-| `financial_goals_status_target_date_idx`         | `status, target_date`          | **Active goals due soon, across all users** (for example reminders and follow-ups)                                                                  |
+| Index                                                          | Columns                        | Serves                                                                                                                                                                        |
+| -------------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `users_pkey`                                                   | `id`                           | Lookup by id                                                                                                                                                                  |
+| `users_phone_number_key` (unique)                              | `phone_number`                 | **Identify a caller by phone number**, the main lookup for incoming calls. The unique index also enforces uniqueness, so no second index is needed.                           |
+| `financial_profiles_user_id_key` (unique)                      | `user_id`                      | Load a user's profile; enforces one profile per user; indexes the FK                                                                                                          |
+| `financial_goals_user_id_status_target_date_idx`               | `user_id, status, target_date` | **A user's goals** (leftmost column; also serves the FK for cascading deletes), **a user's goals with a given status**, sorted by target date                                 |
+| `financial_goals_status_target_date_idx`                       | `status, target_date`          | **Active goals due soon, across all users** (for example reminders and follow-ups)                                                                                            |
+| `financial_literacy_profiles_user_id_key` (unique)             | `user_id`                      | Load a user's literacy profile; enforces one per user; indexes the FK                                                                                                         |
+| `financial_literacy_topic_progress_user_id_topic_key` (unique) | `user_id, topic`               | Load one topic's progress; enforces one row per user and topic; its leading column also serves **all progress of a user** and the FK, so there is no separate `user_id` index |
 
 The requirement for indexes on `financial_goals.user_id`, `status` and `target_date` is met by these two composite indexes rather than three single-column ones:
 
@@ -182,7 +186,7 @@ Tools that make the database match the model at startup (`synchronize: true`, `p
 
 ## Development seed
 
-`pnpm db:seed` loads a small, deterministic set of demo data from `apps/api/prisma/seed.ts`: three users, one per language, plus profiles and goals.
+`pnpm db:seed` loads a small, deterministic set of demo data from `apps/api/prisma/seed.ts`: three users, one per language, plus profiles and goals. It also creates missing literacy data: an unassessed BEGINNER profile (`assessedAt` null) for each demo user and one clearly synthetic IN_PROGRESS topic. Literacy rows are only created, never overwritten, so changes made through the internal API survive a re-seed.
 
 - **Fake phone numbers only:** `+9400000000x`. Sri Lanka's numbering plan never assigns a `0` after `+94`, so these numbers cannot belong to a real person.
 - **Deterministic:** fixed ids and upserts. Running it again restores the same records and leaves other data alone.

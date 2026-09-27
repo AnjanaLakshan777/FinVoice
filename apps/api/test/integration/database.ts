@@ -10,7 +10,8 @@ export function createTestPrismaClient(): PrismaClient {
 /** Empties every domain table in the disposable test database. */
 export async function truncateAllTables(prisma: PrismaClient): Promise<void> {
   await prisma.$executeRaw`
-    TRUNCATE TABLE "financial_goals", "financial_profiles", "users",
+    TRUNCATE TABLE "financial_literacy_topic_progress", "financial_literacy_profiles",
+      "financial_goals", "financial_profiles", "users",
       "knowledge_article_translations", "knowledge_articles", "knowledge_sources"`;
 }
 

@@ -29,6 +29,15 @@ export class FinancialProfilesService {
   }
 
   /**
+   * The stored profile, or null if the user has none. For callers that have already checked the
+   * user exists (the financial context), so it costs a single query.
+   */
+  async find(userId: string): Promise<FinancialProfileResponse | null> {
+    const profile = await this.prisma.financialProfile.findUnique({ where: { userId } });
+    return profile ? toFinancialProfileResponse(profile) : null;
+  }
+
+  /**
    * Creates the user's profile or replaces it entirely: omitted amounts become null ("not provided
    * yet") and an omitted currency becomes the default. A single atomic upsert on the unique
    * user_id, so concurrent requests cannot create two profiles.

@@ -20,8 +20,8 @@ export function configureApp(app: NestExpressApplication): void {
     exclude: [
       { path: "health", method: RequestMethod.GET },
       { path: "health/ready", method: RequestMethod.GET },
-      { path: "internal/voice/session-setup", method: RequestMethod.GET },
-      { path: "internal/voice/tools/execute", method: RequestMethod.POST },
+      // Every INTERNAL, token-protected route (voice setup and tools, user context).
+      { path: "internal/{*path}", method: RequestMethod.ALL },
     ],
   });
   app.useGlobalPipes(new RequestValidationPipe());

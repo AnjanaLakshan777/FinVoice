@@ -8,5 +8,6 @@ import { FinancialProfilesService } from "./financial-profiles.service.js";
   imports: [UsersModule],
   controllers: [FinancialProfilesController],
   providers: [FinancialProfilesService],
+  exports: [FinancialProfilesService],
 })
 export class FinancialProfilesModule {}

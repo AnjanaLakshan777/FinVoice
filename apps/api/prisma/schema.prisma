@@ -65,8 +65,10 @@ model User {
   createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  financialProfile FinancialProfile?
-  financialGoals   FinancialGoal[]
+  financialProfile          FinancialProfile?
+  financialGoals            FinancialGoal[]
+  financialLiteracyProfile  FinancialLiteracyProfile?
+  financialLiteracyProgress FinancialLiteracyTopicProgress[]
 
   @@map("users")
 }
@@ -249,4 +251,62 @@ model KnowledgeArticleTranslation {
   /// One translation per language; its index also serves "the translations of an article".
   @@unique([articleId, language])
   @@map("knowledge_article_translations")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Financial literacy (Step 8). See docs/architecture/personal-financial-context.md.
+// ---------------------------------------------------------------------------------------------
+
+/// A learning level, not a rating of intelligence or competence. Changed only by explicit
+/// application logic (a formal assessment or an authorised update), never inferred from chats.
+enum FinancialLiteracyLevel {
+  BEGINNER
+  DEVELOPING
+  CONFIDENT
+
+  @@map("financial_literacy_level")
+}
+
+enum FinancialLiteracyTopicStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+
+  @@map("financial_literacy_topic_status")
+}
+
+/// The user's financial-literacy learning level. assessedAt null means "no formal assessment
+/// completed yet": creating the row does not set it.
+model FinancialLiteracyProfile {
+  id                String                 @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId            String                 @unique @map("user_id") @db.Uuid
+  level             FinancialLiteracyLevel @default(BEGINNER)
+  assessmentVersion String                 @default("1") @map("assessment_version") @db.VarChar(20)
+  assessedAt        DateTime?              @map("assessed_at") @db.Timestamptz(3)
+  createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@map("financial_literacy_profiles")
+}
+
+/// The user's progress on one literacy topic. Topics are the knowledge-base categories; progress
+/// is per topic, not per article, because articles change over time. No row means NOT_STARTED.
+model FinancialLiteracyTopicProgress {
+  id             String                       @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId         String                       @map("user_id") @db.Uuid
+  topic          KnowledgeCategory
+  status         FinancialLiteracyTopicStatus @default(NOT_STARTED)
+  startedAt      DateTime?                    @map("started_at") @db.Timestamptz(3)
+  completedAt    DateTime?                    @map("completed_at") @db.Timestamptz(3)
+  lastActivityAt DateTime?                    @map("last_activity_at") @db.Timestamptz(3)
+  createdAt      DateTime                     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime                     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  // Also serves "all progress of a user" (user_id is its leading column): no separate index.
+  @@unique([userId, topic])
+  @@map("financial_literacy_topic_progress")
 }

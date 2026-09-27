@@ -86,6 +86,32 @@ const financialGoals = [
   },
 ] as const satisfies readonly (Prisma.FinancialGoalUncheckedCreateInput & { id: string })[];
 
+/**
+ * Literacy profiles for the demo users: BEGINNER and unassessed (assessedAt null), because no
+ * assessment has been done. Created only if missing; an existing profile is never changed.
+ */
+const literacyProfiles = users.map((user, index) => ({
+  id: `00000000-0000-7000-8003-00000000000${String(index + 1)}`,
+  userId: user.id,
+  level: "BEGINNER",
+  assessmentVersion: "1",
+  assessedAt: null,
+})) satisfies (Prisma.FinancialLiteracyProfileUncheckedCreateInput & { id: string })[];
+
+/** One clearly synthetic in-progress topic, for trying the context locally. Created only if missing. */
+const literacyProgress = [
+  {
+    id: "00000000-0000-7000-8004-000000000001",
+    userId: users[0].id,
+    topic: "SAVING",
+    status: "IN_PROGRESS",
+    startedAt: new Date("2026-01-10T09:00:00.000Z"),
+    lastActivityAt: new Date("2026-01-10T09:00:00.000Z"),
+  },
+] as const satisfies readonly (Prisma.FinancialLiteracyTopicProgressUncheckedCreateInput & {
+  id: string;
+})[];
+
 async function main(): Promise<void> {
   const config = loadDatabaseConfig();
   if (config.nodeEnv === "production") {
@@ -112,13 +138,23 @@ async function main(): Promise<void> {
         prisma.financialGoal.upsert({ where: { id }, create: { id, ...data }, update: data }),
       ),
     ]);
+    // Literacy data is only ever created, never overwritten: a demo user's level or progress may
+    // have been changed through the internal API since the last seed.
+    await prisma.financialLiteracyProfile.createMany({
+      data: literacyProfiles,
+      skipDuplicates: true,
+    });
+    await prisma.financialLiteracyTopicProgress.createMany({
+      data: [...literacyProgress],
+      skipDuplicates: true,
+    });
   } finally {
     await prisma.$disconnect();
   }
 
   console.info(
-    `Seeded ${String(users.length)} users, ${String(financialProfiles.length)} financial profiles and ` +
-      `${String(financialGoals.length)} financial goals.`,
+    `Seeded ${String(users.length)} users, ${String(financialProfiles.length)} financial profiles, ` +
+      `${String(financialGoals.length)} financial goals, and missing demo literacy profiles and progress.`,
   );
 }
 
