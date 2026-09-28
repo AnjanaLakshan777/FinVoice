@@ -4,10 +4,10 @@ FinVoice is a voice-first financial inclusion and financial literacy platform fo
 
 ## Current status
 
-**Step 11: authentication and authorisation.** This repository has:
+**Step 12: web authentication and onboarding.** This repository has:
 
 - a pnpm monorepo with strict TypeScript, ESLint, Prettier, Vitest and CI;
-- a **web app** (Next.js) with a `/voice` page for real-time voice conversations;
+- a **web app** (Next.js) with a `/voice` page for real-time voice conversations, and sign-in (`/login`), a small account area (`/dashboard`, `/onboarding`, `/goals`) and a same-origin proxy to the API;
 - a **backend API** (NestJS) with a validated REST API for users, financial profiles and financial goals under `/api/v1`, plus liveness (`GET /health`) and database readiness (`GET /health/ready`) checks;
 - passwordless **authentication** (phone number and one-time code, `/api/v1/auth`). It issues short-lived JWT access tokens and rotating refresh sessions in an HttpOnly cookie. Authorisation covers roles (`USER`, `ADMIN`) and owner checks on all personal data, and there is an authenticated `/api/v1/me` API. **No real SMS provider yet**: sign-in works locally with a development code provider only;
 - a framework-independent **financial calculation engine** (loan repayment, savings plan, budget summary) with exact decimal arithmetic, exposed under `/api/v1/calculations`;
@@ -20,7 +20,7 @@ FinVoice is a voice-first financial inclusion and financial literacy platform fo
 - a **voice gateway** service (Node.js) that bridges the browser (WebSocket) and **Gemini Live** (native audio), with transcription, barge-in, session resumption and FinVoice tools run through the API, plus `GET /health`;
 - shared `shared`, `contracts`, `config`, `finance-engine` and `scam-shield` packages.
 
-Voice and the AI agent are not personalised and not tied to a signed-in user yet (voice is a local/development setup), the web app has no sign-in yet, and there is no telephony. The target architecture is described in [docs/architecture/system-overview.md](docs/architecture/system-overview.md), the database design in [docs/architecture/database.md](docs/architecture/database.md), the calculation engine in [docs/architecture/financial-calculation-engine.md](docs/architecture/financial-calculation-engine.md), the knowledge base in [docs/architecture/financial-knowledge-base.md](docs/architecture/financial-knowledge-base.md), the AI agent in [docs/architecture/ai-agent.md](docs/architecture/ai-agent.md), browser voice in [docs/architecture/browser-voice.md](docs/architecture/browser-voice.md), authentication in [docs/architecture/authentication-authorization.md](docs/architecture/authentication-authorization.md), ScamShield in [docs/architecture/scam-shield.md](docs/architecture/scam-shield.md) and the API in [docs/api/domain-api.md](docs/api/domain-api.md).
+Voice and the AI agent are not personalised and not tied to a signed-in user yet (voice is a local/development setup), and there is no telephony. The target architecture is described in [docs/architecture/system-overview.md](docs/architecture/system-overview.md), the database design in [docs/architecture/database.md](docs/architecture/database.md), the calculation engine in [docs/architecture/financial-calculation-engine.md](docs/architecture/financial-calculation-engine.md), the knowledge base in [docs/architecture/financial-knowledge-base.md](docs/architecture/financial-knowledge-base.md), the AI agent in [docs/architecture/ai-agent.md](docs/architecture/ai-agent.md), browser voice in [docs/architecture/browser-voice.md](docs/architecture/browser-voice.md), authentication in [docs/architecture/authentication-authorization.md](docs/architecture/authentication-authorization.md) and [docs/architecture/web-authentication.md](docs/architecture/web-authentication.md), ScamShield in [docs/architecture/scam-shield.md](docs/architecture/scam-shield.md) and the API in [docs/api/domain-api.md](docs/api/domain-api.md).
 
 ## Repository structure
 
@@ -140,6 +140,10 @@ Invoke-RestMethod "$api/me/financial-context" -Headers $auth
 
 The access token lasts 15 minutes. The refresh token is an HttpOnly cookie for `POST /api/v1/auth/refresh` (see [docs/api/domain-api.md](docs/api/domain-api.md#authentication)).
 
+### Signing in on the web
+
+With the same `.env` settings, start everything (`pnpm dev`) and open http://localhost:3000/login. Enter a fake number such as `+94000000901`, then your `AUTH_OTP_DEV_CODE`. A new account goes through a short onboarding (name, language, monthly income and expenses, a first goal); then `/dashboard` and `/goals` show your data. The web server forwards `/api/v1` to the API (`INTERNAL_API_URL`), so the refresh cookie stays HttpOnly on the web origin and the access token lives only in the page's memory: a reload renews it from the cookie. **Real SMS is not implemented**: the development code works only with `NODE_ENV=development` or `test`. See [docs/architecture/web-authentication.md](docs/architecture/web-authentication.md).
+
 Calculations need no stored data or sign-in:
 
 ```powershell
@@ -167,7 +171,7 @@ The result lists warning indicators, not a verdict. It never says content is saf
 
 ### Admin dashboard (local development only)
 
-A temporary, aggregate-only analytics dashboard at http://localhost:3000/admin. The web app does not sign users in yet, so the dashboard has no login: it is **disabled by default** (a 404) and must only be enabled on your own machine or a trusted internal network. It shows counts, languages, latency, errors and the knowledge review queue, never messages, transcripts, amounts or personal details. See [docs/architecture/analytics.md](docs/architecture/analytics.md).
+A temporary, aggregate-only analytics dashboard at http://localhost:3000/admin. It is not connected to user sign-in, so it has no login: it is **disabled by default** (a 404) and must only be enabled on your own machine or a trusted internal network. It shows counts, languages, latency, errors and the knowledge review queue, never messages, transcripts, amounts or personal details. See [docs/architecture/analytics.md](docs/architecture/analytics.md).
 
 1. Make sure your root `.env` has `INTERNAL_API_TOKEN` (see "Talking to FinVoice" below) and apply the migrations (`pnpm db:migrate`).
 2. Start the API: `pnpm dev:api`.
@@ -237,17 +241,18 @@ The schema lives in [apps/api/prisma/schema.prisma](apps/api/prisma/schema.prism
 
 ## Tests and quality checks
 
-| Task                                      | Command                 |
-| ----------------------------------------- | ----------------------- |
-| Unit tests (no Docker needed)             | `pnpm test`             |
-| Database integration tests (needs Docker) | `pnpm test:integration` |
-| Lint                                      | `pnpm lint`             |
-| Lint and auto-fix                         | `pnpm lint:fix`         |
-| Type-check every project                  | `pnpm typecheck`        |
-| Check formatting                          | `pnpm format:check`     |
-| Format all files                          | `pnpm format`           |
-| Build all apps and packages               | `pnpm build`            |
-| Remove build output                       | `pnpm clean`            |
+| Task                                         | Command                 |
+| -------------------------------------------- | ----------------------- |
+| Unit tests (no Docker needed)                | `pnpm test`             |
+| Database integration tests (needs Docker)    | `pnpm test:integration` |
+| Browser end-to-end test (DB, builds, Chrome) | `pnpm test:e2e`         |
+| Lint                                         | `pnpm lint`             |
+| Lint and auto-fix                            | `pnpm lint:fix`         |
+| Type-check every project                     | `pnpm typecheck`        |
+| Check formatting                             | `pnpm format:check`     |
+| Format all files                             | `pnpm format`           |
+| Build all apps and packages                  | `pnpm build`            |
+| Remove build output                          | `pnpm clean`            |
 
 **Database integration tests** (`apps/api/test/integration`) need a running Docker engine, but **not** your development database, which they never touch:
 

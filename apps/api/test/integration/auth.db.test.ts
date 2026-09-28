@@ -103,6 +103,10 @@ describe("auth_sessions constraints", () => {
     ["refresh_token_hash_format_check", { refreshTokenHash: "x".repeat(64) }],
     ["expires_after_created_check", { expiresAt: new Date(Date.now() - 1000) }],
     ["replaced_is_revoked_check", { replacedBySessionId: randomUUID() }],
+    [
+      "grace_reuse_requires_replacement_check",
+      { revokedAt: new Date(), graceReusedAt: new Date() },
+    ],
   ])("enforces %s", async (constraint, overrides) => {
     await expectCheckViolation(session(overrides), `auth_sessions_${constraint}`);
   });

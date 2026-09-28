@@ -11,6 +11,7 @@ import { decodeJwt, SignJWT } from "jose";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { SmsOtpDeliveryProvider, type OtpDelivery } from "../../src/auth/otp-delivery.js";
+import { REFRESH_GRACE_MS } from "../../src/auth/session.service.js";
 import { disabledAuthConfig, testAuthConfig, wrongOtpCode } from "../support/auth.js";
 import { refreshCookieOf, startTestApi, type ApiResponse, type TestApi } from "./api-app.js";
 import { truncateAllTables } from "./database.js";
@@ -136,6 +137,18 @@ async function refresh(cookie?: string) {
     sensitive.add(response.body.accessToken);
   }
   return response;
+}
+
+/** Moves every rotation back past the grace period, as if REFRESH_GRACE_MS had elapsed. */
+async function expireGrace(): Promise<void> {
+  await api.prisma.authSession.updateMany({
+    where: { revokedAt: { not: null } },
+    data: { revokedAt: new Date(Date.now() - REFRESH_GRACE_MS - 1000) },
+  });
+}
+
+async function activeSessions(): Promise<number> {
+  return api.prisma.authSession.count({ where: { revokedAt: null } });
 }
 
 function bearer(token: string): Record<string, string> {
@@ -645,10 +658,11 @@ describe("POST /api/v1/auth/refresh", () => {
     expect(me.status).toBe(200);
   });
 
-  it("treats reuse of a rotated token as theft: revokes the whole family", async () => {
+  it("treats reuse of a rotated token after the grace period as theft: revokes the whole family", async () => {
     const { cookie } = await signIn();
     const rotated = await refresh(cookie);
     const current = cookieOf(rotated);
+    await expireGrace();
 
     const reuse = await refresh(cookie);
 
@@ -663,8 +677,9 @@ describe("POST /api/v1/auth/refresh", () => {
     const first = await signIn();
     const second = await signIn();
     await refresh(first.cookie);
+    await expireGrace();
 
-    await refresh(first.cookie);
+    expect((await refresh(first.cookie)).status).toBe(401);
 
     expect((await refresh(second.cookie)).status).toBe(200);
   });
@@ -750,14 +765,240 @@ describe("POST /api/v1/auth/refresh", () => {
     expect(inBody.status).toBe(401);
   });
 
-  it("lets at most one of several concurrent refreshes with the same token succeed", async () => {
+  it("lets at most two of many concurrent refreshes with one token succeed, then revokes the family", async () => {
     const { cookie } = await signIn();
 
     const responses = await Promise.all(Array.from({ length: 5 }, () => refresh(cookie)));
 
-    expect(responses.filter((response) => response.status === 200).length).toBeLessThanOrEqual(1);
-    // Simultaneous use of one token is treated as reuse: the family ends up revoked.
-    expect(await api.prisma.authSession.count({ where: { revokedAt: null } })).toBe(0);
+    // One rotation and at most one grace reuse; every further use is replay: family revoked.
+    expect(responses.filter((response) => response.status === 200)).toHaveLength(2);
+    expect(responses.filter((response) => response.status === 401)).toHaveLength(3);
+    expect(await activeSessions()).toBe(0);
+    for (const response of responses.filter((candidate) => candidate.status === 200)) {
+      expect((await refresh(cookieOf(response))).status).toBe(401);
+    }
+  });
+});
+
+describe("refresh grace period (overlapping refreshes of the previous token)", () => {
+  async function signIn() {
+    const response = await verify({ challengeId: await challengeFor(), code });
+    expect(response.status).toBe(200);
+    return { body: response.body, cookie: cookieOf(response) };
+  }
+
+  it("normal refresh A → B: B is the family's only active session", async () => {
+    const { cookie } = await signIn();
+
+    const b = await refresh(cookie);
+
+    expect(b.status).toBe(200);
+    expect(await activeSessions()).toBe(1);
+    expect((await refresh(cookieOf(b))).status).toBe(200);
+  });
+
+  it("two concurrent refreshes with A (a reload race) both succeed and keep the sign-in", async () => {
+    const { cookie } = await signIn();
+
+    const responses = await Promise.all([refresh(cookie), refresh(cookie)]);
+
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    // No family revocation: both new cookies are valid, whichever the browser keeps.
+    expect(await activeSessions()).toBe(2);
+    const [first, second] = responses.map((response) => cookieOf(response));
+    expect(first).not.toBe(second);
+    for (const response of responses) {
+      // No refresh token (or other secret) in the body: only the access token and the identity.
+      expect(Object.keys(response.body).sort()).toEqual(
+        ["accessToken", "expiresIn", "tokenType", "user"].sort(),
+      );
+      expect(response.text).not.toContain(cookie.split("=")[1]);
+      expect(response.text).not.toContain(cookieOf(response).split("=")[1]);
+    }
+  });
+
+  it.each([0, 1])(
+    "keeps whichever cookie the browser retains usable (retained: response %i)",
+    async (retained) => {
+      const { cookie } = await signIn();
+      const responses = await Promise.all([refresh(cookie), refresh(cookie)]);
+      const kept = cookieOf(responses[retained] as ApiResponse);
+
+      const next = await refresh(kept);
+
+      expect(next.status).toBe(200);
+      // The unused half of the overlap is closed by that rotation: one active session again.
+      expect(await activeSessions()).toBe(1);
+      expect((await refresh(cookieOf(next))).status).toBe(200);
+    },
+  );
+
+  it("accepts A once more if its first refresh's response was lost (sequential reload)", async () => {
+    const { cookie } = await signIn();
+    const b = await refresh(cookie);
+
+    const again = await refresh(cookie);
+
+    expect(again.status).toBe(200);
+    expect(await activeSessions()).toBe(2);
+    // The active replacement B still works too.
+    expect((await refresh(cookieOf(b))).status).toBe(200);
+  });
+
+  it("starts the grace period at the rotation and ends it after 5 seconds", async () => {
+    expect(REFRESH_GRACE_MS).toBe(5_000);
+    const inside = await signIn();
+    await refresh(inside.cookie);
+    await api.prisma.authSession.updateMany({
+      where: { revokedAt: { not: null } },
+      data: { revokedAt: new Date(Date.now() - REFRESH_GRACE_MS + 1_500) },
+    });
+
+    expect((await refresh(inside.cookie)).status).toBe(200);
+
+    const outside = await signIn();
+    await refresh(outside.cookie);
+    await api.prisma.authSession.updateMany({
+      where: { revokedAt: { not: null }, graceReusedAt: null },
+      data: { revokedAt: new Date(Date.now() - REFRESH_GRACE_MS - 1) },
+    });
+    const late = await refresh(outside.cookie);
+
+    expect(late.status).toBe(401);
+    expect(late.body).toEqual(INVALID_REFRESH);
+  });
+
+  it("rejects A after the grace period and revokes the whole family (B included)", async () => {
+    const { cookie } = await signIn();
+    const b = cookieOf(await refresh(cookie));
+    await expireGrace();
+
+    const reuse = await refresh(cookie);
+
+    expect(reuse.status).toBe(401);
+    expect(await activeSessions()).toBe(0);
+    expect((await refresh(b)).status).toBe(401);
+  });
+
+  it("allows only ONE grace reuse: a third use of A is replay and revokes the family", async () => {
+    const { cookie } = await signIn();
+    const b = cookieOf(await refresh(cookie));
+    const c = cookieOf(await refresh(cookie));
+
+    const third = await refresh(cookie);
+
+    expect(third.status).toBe(401);
+    expect(third.body).toEqual(INVALID_REFRESH);
+    expect(await activeSessions()).toBe(0);
+    expect((await refresh(b)).status).toBe(401);
+    expect((await refresh(c)).status).toBe(401);
+    const graced = await api.prisma.authSession.findMany({
+      where: { graceReusedAt: { not: null } },
+    });
+    expect(graced).toHaveLength(1);
+  });
+
+  it("cannot be multiplied by concurrent replays of A after its rotation", async () => {
+    const { cookie } = await signIn();
+    await refresh(cookie);
+
+    const replays = await Promise.all(Array.from({ length: 10 }, () => refresh(cookie)));
+
+    // At most one grace reuse succeeds; the next replay revokes the family, so nothing stays valid.
+    expect(replays.filter((response) => response.status === 200).length).toBeLessThanOrEqual(1);
+    expect(await activeSessions()).toBe(0);
+    expect(await api.prisma.authSession.count({ where: { graceReusedAt: { not: null } } })).toBe(1);
+  });
+
+  it("treats the closed half of an overlap as reuse if it is ever presented later", async () => {
+    const { cookie } = await signIn();
+    const [first, second] = (await Promise.all([refresh(cookie), refresh(cookie)])).map(
+      (response) => cookieOf(response),
+    );
+    await refresh(second);
+
+    const orphan = await refresh(first);
+
+    expect(orphan.status).toBe(401);
+    expect(await activeSessions()).toBe(0);
+  });
+
+  it("gives no grace once the replacement is gone (logout)", async () => {
+    const { cookie } = await signIn();
+    const b = await refresh(cookie);
+    await api.request("POST", "/api/v1/auth/logout", undefined, bearer(b.body.accessToken));
+
+    const again = await refresh(cookie);
+
+    expect(again.status).toBe(401);
+    expect(await activeSessions()).toBe(0);
+  });
+
+  it("logout after an overlap revokes both halves", async () => {
+    const { cookie } = await signIn();
+    const responses = await Promise.all([refresh(cookie), refresh(cookie)]);
+
+    const logout = await api.request(
+      "POST",
+      "/api/v1/auth/logout",
+      undefined,
+      bearer(responses[1].body.accessToken),
+    );
+
+    expect(logout.status).toBe(204);
+    expect(await activeSessions()).toBe(0);
+    for (const response of responses) {
+      expect((await refresh(cookieOf(response))).status).toBe(401);
+    }
+  });
+
+  it("gives no grace for an expired token or an inactive user", async () => {
+    const expired = await signIn();
+    await refresh(expired.cookie);
+    await api.prisma.authSession.updateMany({
+      where: { revokedAt: { not: null } },
+      data: {
+        createdAt: new Date(Date.now() - 40 * 86_400_000),
+        expiresAt: new Date(Date.now() - 1000),
+      },
+    });
+    expect((await refresh(expired.cookie)).status).toBe(401);
+
+    const inactive = await signIn();
+    await refresh(inactive.cookie);
+    await api.prisma.user.updateMany({ data: { status: "INACTIVE" } });
+    expect((await refresh(inactive.cookie)).status).toBe(401);
+    expect(await activeSessions()).toBe(0);
+  });
+
+  it("never refreshes a revoked family again", async () => {
+    const { cookie } = await signIn();
+    const b = cookieOf(await refresh(cookie));
+    await expireGrace();
+    await refresh(cookie);
+
+    for (const token of [cookie, b]) {
+      expect((await refresh(token)).status).toBe(401);
+    }
+    expect(await activeSessions()).toBe(0);
+  });
+
+  it("logs the grace reuse without any token, id or phone number", async () => {
+    const { cookie } = await signIn();
+    const responses = await Promise.all([refresh(cookie), refresh(cookie)]);
+
+    const line = logger.lines.find((entry) => entry.includes("Refresh grace reuse"));
+    expect(line).toBeDefined();
+    const sessions = await api.prisma.authSession.findMany();
+    for (const value of [
+      cookie.split("=")[1],
+      ...responses.map((response) => cookieOf(response).split("=")[1]),
+      ...sessions.map((session) => session.id),
+      ...sessions.map((session) => session.userId),
+      PHONE,
+    ]) {
+      expect(line).not.toContain(value);
+    }
   });
 });
 
@@ -1094,6 +1335,7 @@ describe("credential hygiene", () => {
     const signedIn = await verify({ challengeId, code });
     const cookie = cookieOf(signedIn);
     await refresh(cookie);
+    await expireGrace();
     await refresh(cookie);
 
     expect(logger.lines.join("\n")).toContain("token family revoked");

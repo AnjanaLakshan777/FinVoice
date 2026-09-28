@@ -1,5 +1,6 @@
 import type { ApiConfig } from "@finvoice/config";
 import {
+  AUTH_ERROR_MESSAGES,
   REQUEST_OTP_MESSAGE,
   type AuthMeResponse,
   type AuthTokenResponse,
@@ -77,7 +78,7 @@ export class AuthService {
         apiError(
           HttpStatus.SERVICE_UNAVAILABLE,
           "SERVICE_UNAVAILABLE",
-          "The verification code could not be sent. Try again later.",
+          AUTH_ERROR_MESSAGES.otpDeliveryFailed,
         ),
       );
     }
@@ -186,7 +187,7 @@ export class AuthService {
         apiError(
           HttpStatus.SERVICE_UNAVAILABLE,
           "SERVICE_UNAVAILABLE",
-          "Verification code delivery is not configured",
+          AUTH_ERROR_MESSAGES.otpDeliveryNotConfigured,
         ),
       );
     }
@@ -208,8 +209,9 @@ function unauthorized(message: string): ApiException {
 }
 
 /** Wrong, expired, used, superseded or exhausted code, or an unknown challenge: indistinguishable. */
-const verificationFailed = (): ApiException =>
-  unauthorized("The verification code is invalid or has expired");
+const verificationFailed = (): ApiException => unauthorized(AUTH_ERROR_MESSAGES.invalidCode);
 /** A correct code for an account that may not sign in (inactive, or gone). */
-const authenticationFailed = (): ApiException => unauthorized("Authentication failed");
-const invalidRefreshToken = (): ApiException => unauthorized("Invalid or expired refresh token");
+const authenticationFailed = (): ApiException =>
+  unauthorized(AUTH_ERROR_MESSAGES.authenticationFailed);
+const invalidRefreshToken = (): ApiException =>
+  unauthorized(AUTH_ERROR_MESSAGES.invalidRefreshToken);

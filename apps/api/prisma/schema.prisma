@@ -484,7 +484,7 @@ model OtpChallenge {
 /// itself is never stored: refresh_token_hash is its SHA-256. A rotation revokes the row and
 /// creates its successor in the same token family; reuse of a revoked token revokes the family.
 /// CHECK: refresh_token_hash is 64 hex characters; expires_at > created_at; a replaced session is
-/// revoked.
+/// revoked; only a replaced session can have been grace-reused.
 model AuthSession {
   id                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
   userId              String    @map("user_id") @db.Uuid
@@ -494,6 +494,9 @@ model AuthSession {
   revokedAt           DateTime? @map("revoked_at") @db.Timestamptz(3)
   lastUsedAt          DateTime? @map("last_used_at") @db.Timestamptz(3)
   replacedBySessionId String?   @map("replaced_by_session_id") @db.Uuid
+  /// Set once when this rotated token was presented again within the short grace period (a
+  /// legitimate overlapping refresh, e.g. a page reload): it may be used that way only once.
+  graceReusedAt       DateTime? @map("grace_reused_at") @db.Timestamptz(3)
   createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Restrict)

@@ -26,6 +26,7 @@ describe("database migrations", () => {
       "20260927210000_knowledge_fcrd_hotline_summary",
       "20260927220000_analytics_events",
       "20260928063800_authentication",
+      "20260928113730_refresh_grace",
     ]);
 
     const status = runPrisma(["migrate", "status"], databaseUrl);
@@ -276,6 +277,7 @@ describe("database migrations", () => {
         "auth_sessions_refresh_token_hash_format_check",
         "auth_sessions_expires_after_created_check",
         "auth_sessions_replaced_is_revoked_check",
+        "auth_sessions_grace_reuse_requires_replacement_check",
       ].sort(),
     );
     expect(indexes.map((row) => row.name).sort()).toEqual(
@@ -310,6 +312,7 @@ describe("database migrations", () => {
         "auth_sessions.revoked_at",
         "auth_sessions.last_used_at",
         "auth_sessions.replaced_by_session_id",
+        "auth_sessions.grace_reused_at",
         "auth_sessions.created_at",
       ].sort(),
     );

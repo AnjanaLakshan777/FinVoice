@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { ApiConfig } from "@finvoice/config";
+import { AUTH_ERROR_MESSAGES } from "@finvoice/contracts";
 import { HttpStatus, Inject, Injectable } from "@nestjs/common";
 
 import { ApiException, apiError } from "../common/api.exception.js";
@@ -64,7 +65,7 @@ export class OtpChallengeService {
           apiError(
             HttpStatus.TOO_MANY_REQUESTS,
             "TOO_MANY_REQUESTS",
-            "Too many verification code requests. Try again later.",
+            AUTH_ERROR_MESSAGES.tooManyOtpRequests,
           ),
         );
       }

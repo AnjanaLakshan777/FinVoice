@@ -74,7 +74,7 @@ Every route that is not listed as Public needs credentials, including routes add
 
 ## Authentication
 
-Sign-in is passwordless: phone number, then an 8-digit one-time code. For the security design see [authentication-authorization.md](../architecture/authentication-authorization.md).
+Sign-in is passwordless: phone number, then an 8-digit one-time code. Browsers reach these routes through the web app's own origin (`https://<web>/api/v1/...`, a same-origin proxy), so the refresh cookie stays first-party and HttpOnly; see [web-authentication.md](../architecture/web-authentication.md). For the security design see [authentication-authorization.md](../architecture/authentication-authorization.md).
 
 ### `POST /auth/request-otp`
 

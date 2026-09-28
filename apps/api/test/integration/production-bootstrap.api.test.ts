@@ -425,7 +425,9 @@ describe("authentication flow on the production build (development OTP provider)
     const secondCookie = (refreshed.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
     expect(secondCookie).not.toBe(firstCookie);
 
-    // The first token again: reuse. The whole family is revoked, including the new token.
+    // The first token again, after the short grace period for overlapping refreshes (a reload
+    // race) has passed: reuse. The whole family is revoked, including the new token.
+    await new Promise((resolve) => setTimeout(resolve, 5_500));
     const reused = await call(dev, "POST", "/api/v1/auth/refresh", {
       headers: { cookie: firstCookie },
     });

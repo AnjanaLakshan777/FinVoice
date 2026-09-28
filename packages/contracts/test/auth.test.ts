@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   API_ERROR_CODES,
+  AUTH_ERROR_MESSAGES,
   noQuerySchema,
   ownFinancialGoalParamsSchema,
   requestOtpRequestSchema,
@@ -112,6 +113,27 @@ describe("/me parameters", () => {
       ownFinancialGoalParamsSchema.safeParse({ goalId: CHALLENGE_ID, userId: CHALLENGE_ID })
         .success,
     ).toBe(false);
+  });
+});
+
+describe("authentication error messages", () => {
+  it("are fixed: clients (the web app) rely on them", () => {
+    expect(AUTH_ERROR_MESSAGES).toEqual({
+      invalidCode: "The verification code is invalid or has expired",
+      authenticationFailed: "Authentication failed",
+      invalidRefreshToken: "Invalid or expired refresh token",
+      invalidAccessToken: "Missing or invalid access token",
+      tooManyOtpRequests: "Too many verification code requests. Try again later.",
+      otpDeliveryFailed: "The verification code could not be sent. Try again later.",
+      otpDeliveryNotConfigured: "Verification code delivery is not configured",
+      notConfigured: "Authentication is not configured",
+    });
+  });
+
+  it("never say whether a phone number is registered", () => {
+    for (const message of Object.values(AUTH_ERROR_MESSAGES)) {
+      expect(message).not.toMatch(/regist|not found|exist|unknown (user|number)/iu);
+    }
   });
 });
 

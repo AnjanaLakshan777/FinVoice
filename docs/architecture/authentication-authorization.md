@@ -154,17 +154,30 @@ Table `auth_sessions`: one row per refresh token.
 `POST /api/v1/auth/refresh` (credential: the cookie; no access token needed):
 
 1. The token's hash is looked up.
-2. If the session is revoked, that is **reuse** (see 12). If it has expired, or the user is not active, the answer is `401`.
-3. In one transaction, a successor session is created (same family, new token and hash, fresh 30 days). The old session is then revoked **conditionally** (`WHERE revoked_at IS NULL`), with `replaced_by_session_id` and `last_used_at` set. If the conditional update matches nothing, the token was used concurrently: the transaction rolls back and the attempt is treated as reuse.
-4. A new access token (with the new `sid`, and the role read from the database at that moment) is issued, and the new cookie is set.
+2. Everything else happens in one transaction holding a **per-family lock** (a PostgreSQL advisory lock), and the session is read again under that lock. Concurrent refreshes, logouts and revocations of one family are therefore decided one after the other, on current data.
+3. If the session is active but expired, or the user is not active, the answer is `401`.
+4. Otherwise it is **rotated**: a successor session is created (same family, new token and hash, fresh 30 days), and the old session is revoked with `replaced_by_session_id` and `last_used_at` set. Any other active session of the family (the unused half of an earlier grace overlap, see 12) is closed at the same time, so the successor is the family's only active session.
+5. A new access token (with the new `sid`, and the role read from the database at that moment) is issued, and the new cookie is set.
+6. A revoked session is reuse (see 12), apart from the narrow grace overlap described there.
 
-The old refresh token never works again. Every failure answers the same `401 "Invalid or expired refresh token"` and clears the cookie.
+The old refresh token does not work again, apart from that overlap. Every failure answers the same `401 "Invalid or expired refresh token"` and clears the cookie.
 
 ## 12. Token-family reuse detection
 
 A refresh token whose session is already revoked has been presented twice: once legitimately and once by whoever copied it. The API cannot tell which caller is which, so it revokes **every session of the family**. Both the attacker and the legitimate user must sign in again. The event is logged as `Refresh token reuse detected: token family revoked`, with no ids or tokens. Other families of the same user (other devices) are not affected.
 
-Strictness trade-off: two genuinely simultaneous refreshes with the same token (for example two browser tabs racing) are also treated as reuse. At most one succeeds, and the family is then revoked. Tests cover this. A client should serialise refreshes. A grace period for this case can be considered with the web integration.
+**Short overlap for browser races (Step 12).** A browser can legitimately send the same refresh token twice: a page reloaded (or closed, or navigated away from) while its refresh is in flight sends it again from the new page. Without an allowance, that would sign the person out. So the **immediately previous** token gets a narrow, one-time overlap:
+
+- **When it applies:** the token was rotated (its replacement is known) at most **5 seconds** ago (`REFRESH_GRACE_MS`, fixed, not configurable), and has not been used this way before. Its replacement must still be active (not logged out, rotated on or revoked), the token must not have expired, and the user must still be active.
+- **What happens:** the request gets a new session in the same family. The replacement stays valid too, so whichever cookie the browser ends up keeping works. The next normal rotation in the family closes the other one. Nothing is logged but "Refresh grace reuse" (no token, id or phone number).
+- **Once only:** `grace_reused_at` records the use, set atomically under the family lock. A second overlap use of the same token is reuse.
+- **Everything else is still reuse,** which revokes the whole family:
+  - the token used after the 5 seconds;
+  - a second overlap use;
+  - a token revoked by logout, or closed by a sibling's rotation;
+  - a token whose replacement is gone.
+
+The overlap does **not** make refresh tokens reusable in general. Many simultaneous uses still end the sign-in: of any number of concurrent requests with one token, at most two succeed (one rotation and one overlap use), and the next one revokes the family, including those two. The residual risk is bounded: a thief who replays a copied token within those 5 seconds, before the legitimate browser does, gets one sibling session. That session is closed at the family's next rotation, and a later use of it is reuse.
 
 ## 13. Logout
 
@@ -194,7 +207,7 @@ The refresh token is never in a JSON body, a log or analytics, and never in the 
 - **Even a forced refresh** would only rotate the victim's token: the attacker cannot read the response, which is same-origin, and the API enables no CORS.
 - **Logout** requires the Bearer token, so it cannot be forced cross-site.
 
-This boundary relies on SameSite, which covers modern browsers. No CSRF-token framework is added now. The web authentication step (a Next.js server or BFF in front of the API, possibly on another origin) must revisit this: a cross-origin or `SameSite=None` setup would need CSRF tokens or an origin check.
+This boundary relies on SameSite, which covers modern browsers. No CSRF-token framework is added. The web app (Step 12) keeps this boundary: browsers call the API only through the web app's same-origin proxy, so the cookie stays first-party and `SameSite=Lax` ([web-authentication.md](web-authentication.md#2-same-origin-proxy-cookie-decision)). A cross-origin or `SameSite=None` setup would need CSRF tokens or an origin check.
 
 ## 16. Roles
 
@@ -284,9 +297,9 @@ There are two separate trust domains, and they are never mixed:
 - **No real SMS provider:** `AUTH_OTP_PROVIDER` supports only `dev`, which is allowed in development and test only. In production `request-otp` therefore answers `503 "Verification code delivery is not configured"`. **Authentication cannot be used in production until an SMS provider is implemented.**
 - **Rate limiting** is per phone number, database-backed and single-region. There is no per-IP or global limit (see 6).
 - **No access-token revocation list:** a token outlives logout, deactivation or a role change by at most `AUTH_ACCESS_TOKEN_TTL_SECONDS`.
-- **Strict reuse detection:** concurrent refreshes revoke the family (see 12).
+- **Strict reuse detection with a 5-second overlap:** the immediately previous token may be used once more within 5 seconds of its rotation, for browser reload races (see 12). Three or more near-simultaneous uses of one token still revoke the family.
 - **Missing features:** no device or session management UI, no "log out everywhere", no phone-number change flow, no account recovery beyond OTP, and no audit log (analytics deliberately records nothing about authentication).
-- **Web app:** it does not sign users in yet, and the admin dashboard still uses the internal token (see 25).
+- **Web app:** people sign in through the web app since Step 12 ([web-authentication.md](web-authentication.md)); the admin dashboard is not connected to it and still uses the internal token (see 25).
 - **Voice and the AI agent** are not personalised (see 23, 24).
 - **Secrets:** they must come from the deployment's secret store. Nothing in the repository contains one.
 
@@ -364,7 +377,7 @@ A later step will issue a trusted, short-lived voice-session identity from a ver
 - **The analytics admin dashboard (Step 10)** still reads `/internal/admin/analytics/*` with `INTERNAL_API_TOKEN` from the Next.js server:
   - **The internal token is not a human admin credential.** It authenticates a FinVoice service, not a person, and must never reach a browser.
   - **Public admin access must use authenticated `ADMIN` authorisation.** No admin analytics route is exposed under `/api/v1` without it.
-  - **The dashboard stays disabled by default** (`ADMIN_DASHBOARD_ENABLED=false`) until the web authentication integration connects authenticated admin → Next.js → admin analytics.
+  - **The dashboard stays disabled by default** (`ADMIN_DASHBOARD_ENABLED=false`) until authenticated `ADMIN` users are connected to it (Step 12 added web sign-in for users; admin web authorisation is not built yet).
 
 ## 26. Secret management
 

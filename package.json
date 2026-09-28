@@ -20,6 +20,7 @@
     "lint:fix": "pnpm build:packages && eslint . --fix",
     "test": "pnpm build:packages && pnpm --recursive --if-present test",
     "test:integration": "pnpm build:packages && pnpm --filter @finvoice/api test:integration",
+    "test:e2e": "pnpm build:packages && pnpm --filter @finvoice/web test:e2e",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "clean": "pnpm --recursive run clean",

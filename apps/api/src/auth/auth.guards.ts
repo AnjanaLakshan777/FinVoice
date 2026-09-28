@@ -1,6 +1,6 @@
 import type { ServerResponse } from "node:http";
 
-import type { UserRole } from "@finvoice/contracts";
+import { AUTH_ERROR_MESSAGES, type UserRole } from "@finvoice/contracts";
 import { HttpStatus, Injectable, type CanActivate, type ExecutionContext } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 
@@ -50,7 +50,7 @@ export class AccessTokenGuard implements CanActivate {
     if (identity === null) {
       http.getResponse<ServerResponse>().setHeader("WWW-Authenticate", "Bearer");
       throw new ApiException(
-        apiError(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Missing or invalid access token"),
+        apiError(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", AUTH_ERROR_MESSAGES.invalidAccessToken),
       );
     }
     request[AUTH_CONTEXT] = identity;
@@ -78,7 +78,7 @@ export class RolesGuard implements CanActivate {
     if (auth === undefined) {
       // A role-restricted route that is not authenticated is a programming error: fail closed.
       throw new ApiException(
-        apiError(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Missing or invalid access token"),
+        apiError(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", AUTH_ERROR_MESSAGES.invalidAccessToken),
       );
     }
     if (!roles.includes(auth.role)) {
@@ -99,7 +99,7 @@ export function authenticationNotConfigured(): ApiException {
     apiError(
       HttpStatus.SERVICE_UNAVAILABLE,
       "SERVICE_UNAVAILABLE",
-      "Authentication is not configured",
+      AUTH_ERROR_MESSAGES.notConfigured,
     ),
   );
 }

@@ -355,19 +355,20 @@ Privacy-safe operational analytics (Step 10). Design: [analytics.md](analytics.m
 
 One row per refresh token.
 
-| Column                   | Type             | Rules                                                        |
-| ------------------------ | ---------------- | ------------------------------------------------------------ |
-| `id`                     | `uuid`           | PK, default `uuidv7()`; the access token's `sid` claim       |
-| `user_id`                | `uuid`           | NOT NULL, FK → `users.id` (cascade)                          |
-| `refresh_token_hash`     | `char(64)`       | NOT NULL, UNIQUE, lowercase hex SHA-256 of the refresh token |
-| `token_family_id`        | `uuid`           | NOT NULL: all sessions of one sign-in's rotation chain       |
-| `expires_at`             | `timestamptz(3)` | NOT NULL, after `created_at`                                 |
-| `revoked_at`             | `timestamptz(3)` | nullable: rotation, logout, reuse detection, deactivation    |
-| `last_used_at`           | `timestamptz(3)` | nullable: when the token was presented for rotation          |
-| `replaced_by_session_id` | `uuid`           | nullable: the successor; only on a revoked row               |
-| `created_at`             | `timestamptz(3)` | NOT NULL                                                     |
+| Column                   | Type             | Rules                                                          |
+| ------------------------ | ---------------- | -------------------------------------------------------------- |
+| `id`                     | `uuid`           | PK, default `uuidv7()`; the access token's `sid` claim         |
+| `user_id`                | `uuid`           | NOT NULL, FK → `users.id` (cascade)                            |
+| `refresh_token_hash`     | `char(64)`       | NOT NULL, UNIQUE, lowercase hex SHA-256 of the refresh token   |
+| `token_family_id`        | `uuid`           | NOT NULL: all sessions of one sign-in's rotation chain         |
+| `expires_at`             | `timestamptz(3)` | NOT NULL, after `created_at`                                   |
+| `revoked_at`             | `timestamptz(3)` | nullable: rotation, logout, reuse detection, deactivation      |
+| `last_used_at`           | `timestamptz(3)` | nullable: when the token was presented for rotation            |
+| `replaced_by_session_id` | `uuid`           | nullable: the successor; only on a revoked row                 |
+| `grace_reused_at`        | `timestamptz(3)` | nullable: its one overlap use within 5 s of rotation (Step 12) |
+| `created_at`             | `timestamptz(3)` | NOT NULL                                                       |
 
-- **Constraints:** `auth_sessions_refresh_token_hash_format_check`, `_expires_after_created_check` and `_replaced_is_revoked_check`.
+- **Constraints:** `auth_sessions_refresh_token_hash_format_check`, `_expires_after_created_check`, `_replaced_is_revoked_check` and `_grace_reuse_requires_replacement_check` (only a rotated session can have been grace-reused; migration `20260928113730_refresh_grace`, additive).
 - **No self-referencing foreign key on `replaced_by_session_id`:** it is an audit link. Cleanup deletes whole expired chains, so it must never be blocked by it.
 - **What is not stored:** the refresh token itself, IP addresses and user agents.
 

@@ -73,3 +73,28 @@ export type AuthTokenResponse = {
 };
 
 export type AuthMeResponse = AuthUser & { status: UserStatus };
+
+/**
+ * The exact `message` of each authentication error, shared so clients can react to them without
+ * copying strings. They are deliberately generic: every wrong, expired, used, superseded or
+ * exhausted code gives the same `invalidCode` answer (no enumeration), and only someone who has
+ * just proved possession of the phone sees `authenticationFailed` (an account that may not sign in).
+ */
+export const AUTH_ERROR_MESSAGES = {
+  /** 401 from verify-otp: any code or challenge failure. */
+  invalidCode: "The verification code is invalid or has expired",
+  /** 401 from verify-otp (correct code, inactive account) and /auth/me. */
+  authenticationFailed: "Authentication failed",
+  /** 401 from refresh: missing, unknown, expired, reused or revoked refresh token. */
+  invalidRefreshToken: "Invalid or expired refresh token",
+  /** 401 from any protected route: missing or invalid access token. */
+  invalidAccessToken: "Missing or invalid access token",
+  /** 429 from request-otp: per-number request limit reached. */
+  tooManyOtpRequests: "Too many verification code requests. Try again later.",
+  /** 503 from request-otp: the delivery provider failed. */
+  otpDeliveryFailed: "The verification code could not be sent. Try again later.",
+  /** 503 from request-otp: no delivery provider configured. */
+  otpDeliveryNotConfigured: "Verification code delivery is not configured",
+  /** 503 from sign-in and protected routes: the auth secrets are not configured. */
+  notConfigured: "Authentication is not configured",
+} as const;
