@@ -10,19 +10,9 @@ import {
   type UpdateLiteracyProfileCommand,
   type UserParams,
 } from "@finvoice/contracts";
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Post,
-  Put,
-  UseGuards,
-} from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put } from "@nestjs/common";
 
-import { InternalTokenGuard } from "../common/internal-token.guard.js";
+import { InternalOnly } from "../auth/auth.decorators.js";
 import { FinancialLiteracyProfileService } from "../financial-literacy/financial-literacy-profile.service.js";
 import { FinancialLiteracyProgressService } from "../financial-literacy/financial-literacy-progress.service.js";
 import { FinancialContextService } from "./financial-context.service.js";
@@ -36,7 +26,7 @@ import { FinancialContextService } from "./financial-context.service.js";
  * income, expenses, goals, phone numbers or other user data here.
  */
 @Controller("internal/users")
-@UseGuards(InternalTokenGuard)
+@InternalOnly()
 export class InternalUserContextController {
   constructor(
     private readonly context: FinancialContextService,

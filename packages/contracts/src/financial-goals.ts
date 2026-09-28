@@ -38,6 +38,10 @@ export const financialGoalParamsSchema = z.strictObject({
 });
 export type FinancialGoalParams = z.output<typeof financialGoalParamsSchema>;
 
+/** /me/goals/:goalId: the user is the authenticated caller, never a parameter. */
+export const ownFinancialGoalParamsSchema = z.strictObject({ goalId: uuidSchema });
+export type OwnFinancialGoalParams = z.output<typeof ownFinancialGoalParamsSchema>;
+
 /**
  * The rule currentAmount <= targetAmount spans fields and, on update, stored values, so the API
  * service enforces it (not this schema).

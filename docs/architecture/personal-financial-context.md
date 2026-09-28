@@ -1,6 +1,6 @@
 # Personal financial context
 
-> **Status:** Step 8. The data model, services and a token-protected internal API exist. No public endpoint, public agent or browser voice session can read or change personal context: there is no authentication yet (see [§17](#17-security-limitations-before-authentication)).
+> **Status:** Step 8. The data model, services and a token-protected internal API exist. The public agent and browser voice sessions cannot read or change personal context (see [§17](#17-security-limitations-before-authentication)). Since Step 11, a signed-in user can read **their own** context through `GET /api/v1/me/financial-context` and `/me/literacy-context`, whose identity comes only from the verified access token ([authentication-authorization.md](authentication-authorization.md)).
 
 ## 1. Purpose
 
@@ -182,7 +182,7 @@ FinancialContextService
 - **No arguments.** They take no arguments at all: any argument, such as a `userId`, is rejected as `INVALID_ARGUMENTS`.
 - **Trusted user only.** The user comes only from a `TrustedUserContext`, which only server code can issue. The tools throw if given anything else, including a structurally identical object.
 - **Guarded results.** Results carry a guidance note: facts only, no judgement or recommendations, and a null amount is "not provided", not zero. They contain no ids.
-- **Not yet reachable.** No request path issues a `TrustedUserContext` until authentication exists.
+- **Not yet reachable.** No request path issues a `TrustedUserContext` yet. Authentication exists since Step 11, but the agent and voice are not personalised. A future authenticated agent will create one only from the verified access token (`@CurrentUser()`).
 
 Later, and only with authentication, authorisation and explicit user-confirmed workflows, the agent may record learning progress. It must not change income, expenses, goals, phone numbers or the literacy level, or invent data.
 
@@ -196,6 +196,6 @@ Literacy topics are the knowledge-base categories (the same database enum). Prog
 
 ## 17. Security limitations before authentication
 
-- There is no user authentication or authorisation yet. The internal API trusts any holder of `INTERNAL_API_TOKEN` to act for any user, so the token must stay server-side, and the API must not be exposed publicly (it listens on `127.0.0.1` by default).
+- Step 11 added user authentication, and `/api/v1/me/*-context` serves each signed-in user only their own context. The internal API is a separate trust path: it still trusts any holder of `INTERNAL_API_TOKEN` to act for any user, so the token must stay server-side, and the API must not be exposed publicly (it listens on `127.0.0.1` by default).
 - The public text agent and browser voice remain general-purpose and non-personalised until an authentication step decides which user a session belongs to.
 - The token is a shared secret, not per-caller credentials; there is no audit log of internal reads yet.

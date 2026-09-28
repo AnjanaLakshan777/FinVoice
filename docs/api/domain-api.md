@@ -4,7 +4,7 @@ The FinVoice backend API for users, financial profiles, financial goals, financi
 
 **The API is authoritative.** Every rule below is enforced by the backend (request validation, then service checks, then database constraints), whatever a client, voice flow or AI model has already checked. Clients may propose values; the API decides what is stored.
 
-> **No authentication yet.** Any caller that can reach the API can read and change any user. Do not expose the API publicly until authentication and authorisation are in place (a later step).
+> **Authentication (Step 11).** Personal data requires a signed-in user. Sign-in is by phone number and a one-time code; every request then carries `Authorization: Bearer <access token>`. Each user can reach only their own data, and admin operations need the `ADMIN` role. Real SMS delivery is **not implemented yet**: sign-in works locally with the development OTP provider only. See [authentication-authorization.md](../architecture/authentication-authorization.md).
 
 ## Basics
 
@@ -19,27 +19,50 @@ The FinVoice backend API for users, financial profiles, financial goals, financi
 
 ## Endpoints
 
-| Method  | Path                               | Success | Purpose                                     |
-| ------- | ---------------------------------- | ------- | ------------------------------------------- |
-| `POST`  | `/users`                           | 201     | Create a user                               |
-| `GET`   | `/users/:userId`                   | 200     | Get a user                                  |
-| `PATCH` | `/users/:userId`                   | 200     | Update a user                               |
-| `GET`   | `/users/:userId/financial-profile` | 200     | Get the user's financial profile            |
-| `PUT`   | `/users/:userId/financial-profile` | 200     | Create or replace the user's profile        |
-| `POST`  | `/users/:userId/goals`             | 201     | Create a goal                               |
-| `GET`   | `/users/:userId/goals`             | 200     | List the user's goals (filters, pagination) |
-| `GET`   | `/users/:userId/goals/:goalId`     | 200     | Get one of the user's goals                 |
-| `PATCH` | `/users/:userId/goals/:goalId`     | 200     | Update one of the user's goals              |
-| `POST`  | `/calculations/loan`               | 200     | Calculate a loan repayment                  |
-| `POST`  | `/calculations/savings`            | 200     | Calculate a savings plan                    |
-| `POST`  | `/calculations/budget`             | 200     | Calculate a budget summary                  |
-| `GET`   | `/knowledge/categories`            | 200     | Categories that have published knowledge    |
-| `GET`   | `/knowledge/articles`              | 200     | List or search published knowledge articles |
-| `GET`   | `/knowledge/articles/:slug`        | 200     | Get one published knowledge article         |
-| `POST`  | `/agent/chat`                      | 200     | Ask the FinVoice AI agent a question        |
-| `POST`  | `/scamshield/analyze`              | 200     | Check content for scam warning indicators   |
+Access:
 
-There are no delete endpoints and no list-users endpoint. Goals end through their `status` (`COMPLETED`, `CANCELLED`). Users are deactivated through `status: "INACTIVE"`.
+- **Public:** no credentials.
+- **User:** a valid access token.
+- **Owner:** a valid access token whose user is the `:userId` in the path; another user's id answers 404.
+- **ADMIN:** a valid access token with the `ADMIN` role.
+- **Cookie:** the refresh cookie.
+
+| Method  | Path                               | Access | Success | Purpose                                          |
+| ------- | ---------------------------------- | ------ | ------- | ------------------------------------------------ |
+| `POST`  | `/auth/request-otp`                | Public | 202     | Request a sign-in code for a phone number        |
+| `POST`  | `/auth/verify-otp`                 | Public | 200     | Sign in (or sign up) with the code               |
+| `POST`  | `/auth/refresh`                    | Cookie | 200     | Rotate the refresh token, get a new access token |
+| `POST`  | `/auth/logout`                     | User   | 204     | Sign out this device                             |
+| `GET`   | `/auth/me`                         | User   | 200     | Minimal identity of the signed-in user           |
+| `GET`   | `/me`                              | User   | 200     | Own user record                                  |
+| `PATCH` | `/me`                              | User   | 200     | Change own display name or language              |
+| `GET`   | `/me/financial-profile`            | User   | 200     | Own financial profile                            |
+| `PUT`   | `/me/financial-profile`            | User   | 200     | Create or replace own profile                    |
+| `POST`  | `/me/goals`                        | User   | 201     | Create an own goal                               |
+| `GET`   | `/me/goals`                        | User   | 200     | List own goals (filters, pagination)             |
+| `GET`   | `/me/goals/:goalId`                | User   | 200     | Get an own goal                                  |
+| `PATCH` | `/me/goals/:goalId`                | User   | 200     | Update an own goal                               |
+| `GET`   | `/me/financial-context`            | User   | 200     | Own minimised financial context                  |
+| `GET`   | `/me/literacy-context`             | User   | 200     | Own literacy context                             |
+| `POST`  | `/users`                           | ADMIN  | 201     | Provision a user (not registration)              |
+| `GET`   | `/users/:userId`                   | Owner  | 200     | Get a user                                       |
+| `PATCH` | `/users/:userId`                   | Owner  | 200     | Update a user                                    |
+| `GET`   | `/users/:userId/financial-profile` | Owner  | 200     | Get the user's financial profile                 |
+| `PUT`   | `/users/:userId/financial-profile` | Owner  | 200     | Create or replace the user's profile             |
+| `POST`  | `/users/:userId/goals`             | Owner  | 201     | Create a goal                                    |
+| `GET`   | `/users/:userId/goals`             | Owner  | 200     | List the user's goals (filters, pagination)      |
+| `GET`   | `/users/:userId/goals/:goalId`     | Owner  | 200     | Get one of the user's goals                      |
+| `PATCH` | `/users/:userId/goals/:goalId`     | Owner  | 200     | Update one of the user's goals                   |
+| `POST`  | `/calculations/loan`               | Public | 200     | Calculate a loan repayment                       |
+| `POST`  | `/calculations/savings`            | Public | 200     | Calculate a savings plan                         |
+| `POST`  | `/calculations/budget`             | Public | 200     | Calculate a budget summary                       |
+| `GET`   | `/knowledge/categories`            | Public | 200     | Categories that have published knowledge         |
+| `GET`   | `/knowledge/articles`              | Public | 200     | List or search published knowledge articles      |
+| `GET`   | `/knowledge/articles/:slug`        | Public | 200     | Get one published knowledge article              |
+| `POST`  | `/agent/chat`                      | Public | 200     | Ask the FinVoice AI agent (not personalised)     |
+| `POST`  | `/scamshield/analyze`              | Public | 200     | Check content for scam warning indicators        |
+
+Every route that is not listed as Public needs credentials, including routes added later (the guard is global; public routes are marked explicitly). There are no delete endpoints and no list-users endpoint. Goals end through their `status` (`COMPLETED`, `CANCELLED`). Deactivating a user (`status: "INACTIVE"`) is an administrative operation, not available through the API.
 
 ## Request rules that apply everywhere
 
@@ -47,6 +70,88 @@ There are no delete endpoints and no list-users endpoint. Goals end through thei
 - **Path ids must be UUIDs**. Anything else gets 400 before any lookup.
 - **Strings are trimmed** where noted. Blank display names become `null`; blank goal names are rejected.
 - **PATCH bodies** must contain at least one field. Fields that are not sent are left unchanged, and `null` clears a nullable field.
+- **Identity comes from the access token only.** A `userId`, `role` or `status` sent by the client is rejected (400), never used. Authentication is checked before validation, so an unauthenticated request gets `401` even when its input is invalid.
+
+## Authentication
+
+Sign-in is passwordless: phone number, then an 8-digit one-time code. For the security design see [authentication-authorization.md](../architecture/authentication-authorization.md).
+
+### `POST /auth/request-otp`
+
+```json
+{ "phoneNumber": "+94771234567" }
+```
+
+`202 Accepted`, with the same answer whether or not the number has an account:
+
+```json
+{
+  "challengeId": "5d3c2f0e-8f7a-4b1e-9c6d-2a1b0c9d8e7f",
+  "expiresIn": 300,
+  "message": "If this number can be authenticated, a verification code has been requested."
+}
+```
+
+The code is delivered to the phone, never in the response. Requesting a new code invalidates the previous one. More than 3 requests for one number within 15 minutes get `429 TOO_MANY_REQUESTS`. A malformed number gets `400` (it is not normalised). Without a delivery provider (currently the case in production: no SMS provider yet) the answer is `503`.
+
+### `POST /auth/verify-otp`
+
+```json
+{
+  "challengeId": "5d3c2f0e-…",
+  "code": "12345678",
+  "displayName": "Kamal",
+  "preferredLanguage": "SI"
+}
+```
+
+| Field               | Rules                                                                                   |
+| ------------------- | --------------------------------------------------------------------------------------- |
+| `challengeId`       | Required UUID from `request-otp`                                                        |
+| `code`              | Required string of exactly 8 digits, no spaces                                          |
+| `displayName`       | Optional; used only if this sign-in creates the account                                 |
+| `preferredLanguage` | Optional `SI`, `TA`, `EN` (default `EN`); used only if this sign-in creates the account |
+
+Any other field (`role`, `status`, `userId`, `sessionId`, `accessToken`, `refreshToken`, `phoneNumber` …) is rejected with `400`. On success, `200`:
+
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9…",
+  "tokenType": "Bearer",
+  "expiresIn": 900,
+  "user": {
+    "id": "01a0dc6b-…",
+    "preferredLanguage": "SI",
+    "timezone": "Asia/Colombo",
+    "role": "USER"
+  }
+}
+```
+
+The refresh token is set as a cookie and is **not** in the body: `Set-Cookie: finvoice_refresh=…; Max-Age=2592000; Path=/api/v1/auth; HttpOnly; SameSite=Lax` (plus `Secure` in production). An unknown number becomes a new `USER` account. A known number signs in the existing account without changing it.
+
+**Failures:**
+
+- `401 "The verification code is invalid or has expired"`: wrong, expired, used or superseded code, too many attempts (5 per code; after that even the right code fails), or unknown challenge. All of these look the same.
+- `401 "Authentication failed"`: an inactive account.
+
+### `POST /auth/refresh`
+
+No body, no access token: the credential is the `finvoice_refresh` cookie. The answer is `200` with the same body as `verify-otp`, and a **new** cookie. The old refresh token stops working immediately. Presenting an already-used refresh token revokes that whole sign-in (the token family), including its newest token. Missing, unknown, expired, reused or revoked tokens and inactive users get `401 "Invalid or expired refresh token"`, and the cookie is cleared.
+
+Non-browser clients send the cookie back themselves (`Cookie: finvoice_refresh=<token>`), replace it after every refresh, and must not refresh concurrently with the same token.
+
+### `POST /auth/logout`
+
+Requires the access token. It revokes this device's sign-in (other devices stay signed in), clears the cookie and answers `204`. The access token itself remains valid until it expires (at most 15 minutes).
+
+### `GET /auth/me`
+
+Requires the access token. The answer is `200 { "id", "preferredLanguage", "timezone", "role", "status" }`, with no phone number and no financial data. A deactivated or deleted user gets `401`.
+
+### Using the access token
+
+Send `Authorization: Bearer <accessToken>` on every non-public route. A missing, malformed, expired or otherwise invalid token gets `401` with `WWW-Authenticate: Bearer` and `{"code": "UNAUTHORIZED", "message": "Missing or invalid access token"}`. When the access token expires, call `/auth/refresh`.
 
 ## Money
 
@@ -68,7 +173,11 @@ Values with more than 2 decimal places are rejected, not rounded. The server com
 
 ## Users
 
+The `/users/:userId/…` routes (users, financial profile, goals) serve **only the caller's own id**. Another user's id answers `404 "User not found"`, exactly like an id that does not exist, so account ids cannot be probed. `ADMIN` gets no exception. `/me/…` is the simpler way to reach the same data.
+
 ### `POST /users`
+
+**ADMIN only** (`401` without a token, `403` for a `USER`). This provisions an account on someone's behalf; it is **not** registration (people sign up through `/auth/verify-otp`). The new user is always `USER` and `ACTIVE`; a `role` field is rejected.
 
 ```json
 { "phoneNumber": "+94771234567", "preferredLanguage": "SI", "displayName": "Kamal" }
@@ -97,11 +206,32 @@ New users are `ACTIVE`, with time zone `Asia/Colombo`. `201 Created`:
 
 ### `GET /users/:userId`
 
-Returns the user (`200`), `404` if it does not exist, or `400` for a malformed id.
+Returns the caller's own user (`200`). Another user's id or an unknown id gets `404`, and a malformed id gets `400`.
 
 ### `PATCH /users/:userId`
 
-Any of `phoneNumber`, `preferredLanguage`, `displayName` (null clears it) and `status` (`ACTIVE`, `INACTIVE`), with the same rules as creation. `id`, `timezone`, `createdAt` and `updatedAt` cannot be changed. A phone number that belongs to another user returns `409`.
+Any of `preferredLanguage` and `displayName` (null clears it), with the same rules as creation. Everything else is rejected with `400`:
+
+- `phoneNumber`: the login identity; a verified change flow is future work;
+- `status` and `role`: administrative;
+- `id`, `timezone`, `createdAt` and `updatedAt`.
+
+## Me
+
+The signed-in user's own data. The user is always the one in the access token: no route takes a user id, bodies reject `userId`, and routes without query parameters reject any query string (`?userId=…` gets `400`). The rules and responses are the same as for the corresponding `/users/:userId/…` routes.
+
+| Method  | Path                    | Same as / returns                                                            |
+| ------- | ----------------------- | ---------------------------------------------------------------------------- |
+| `GET`   | `/me`                   | `GET /users/:userId`                                                         |
+| `PATCH` | `/me`                   | `PATCH /users/:userId` (`displayName`, `preferredLanguage`)                  |
+| `GET`   | `/me/financial-profile` | `GET /users/:userId/financial-profile`                                       |
+| `PUT`   | `/me/financial-profile` | `PUT /users/:userId/financial-profile`                                       |
+| `POST`  | `/me/goals`             | `POST /users/:userId/goals`                                                  |
+| `GET`   | `/me/goals`             | `GET /users/:userId/goals` (same filters and pagination)                     |
+| `GET`   | `/me/goals/:goalId`     | `GET /users/:userId/goals/:goalId` (another user's goal: `404`)              |
+| `PATCH` | `/me/goals/:goalId`     | `PATCH /users/:userId/goals/:goalId`                                         |
+| `GET`   | `/me/financial-context` | The same minimised context as the internal user-context endpoint (see below) |
+| `GET`   | `/me/literacy-context`  | Literacy level and topic progress, as the internal endpoint                  |
 
 ## Financial profile
 
@@ -608,7 +738,12 @@ Tool execution uses the same registry as `POST /agent/chat`: unknown tools, inva
 
 ## Internal user-context endpoints (INTERNAL, not part of `/api/v1`)
 
-Personal financial context for trusted FinVoice services only (Step 8). The same token and header as the internal voice endpoints: `x-finvoice-internal-token: <INTERNAL_API_TOKEN>`. The token is checked before anything else, so without it even an unknown user id gets `401` (whether a user exists is not revealed). There is **no public** endpoint for personal context: the public API and agent stay non-personalised until authentication exists. See [personal-financial-context.md](../architecture/personal-financial-context.md).
+Personal financial context for trusted FinVoice services only (Step 8). These endpoints use the same token and header as the internal voice endpoints: `x-finvoice-internal-token: <INTERNAL_API_TOKEN>`.
+
+- **Token first:** the token is checked before anything else, so without it even an unknown user id gets `401`, and whether a user exists is not revealed.
+- **Separate from user sign-in:** an end-user access token does not open these routes. Signed-in users read their own context through `/me/financial-context` and `/me/literacy-context` instead; the two trust paths are kept apart.
+- **Agent and voice:** the public agent and voice stay non-personalised.
+- **Design:** see [personal-financial-context.md](../architecture/personal-financial-context.md).
 
 | Method | Path                                                      | Success | Purpose                                                                                                                                              |
 | ------ | --------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -630,6 +765,8 @@ Personal financial context for trusted FinVoice services only (Step 8). The same
 ## Internal analytics endpoints (INTERNAL, not part of `/api/v1`)
 
 Operational analytics for the temporary admin dashboard (Step 10). They use the same token and header as the other internal endpoints: `x-finvoice-internal-token: <INTERNAL_API_TOKEN>`.
+
+- **Not a human admin credential:** the internal token authenticates a FinVoice server, not a person, and must never reach a browser. Public admin access will use an authenticated `ADMIN` user, and the dashboard stays disabled by default (`ADMIN_DASHBOARD_ENABLED=false`) until web sign-in is integrated.
 
 - **Token handling:** a missing or wrong token gives `401`, checked before validation. If the API has no token configured, the answer is `503`.
 - **Aggregates only:** responses never contain events, ids, session ids, users, content or amounts. There is **no endpoint that returns events**.
@@ -709,45 +846,73 @@ Every error from the API (domain routes, unknown routes and malformed requests) 
 | ------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 400    | `VALIDATION_ERROR`    | Invalid body, query or path id, unknown property, or a broken domain rule (`currentAmount` > `targetAmount`)                                                                                                             |
 | 400    | `BAD_REQUEST`         | The request could not be parsed (for example malformed JSON)                                                                                                                                                             |
+| 401    | `UNAUTHORIZED`        | Missing, invalid or expired access token; wrong, expired or used sign-in code; invalid or reused refresh token; inactive account; internal endpoints: missing or wrong internal token                                    |
+| 403    | `FORBIDDEN`           | Signed in, but the role does not allow the action (for example a `USER` provisioning users)                                                                                                                              |
 | 404    | `NOT_FOUND`           | The user, profile or goal does not exist or belongs to another user; unknown route, inside or outside `/api/v1` (for example `/internal/…`): always this JSON format, `"message": "Route not found"`, never an HTML page |
-| 401    | `UNAUTHORIZED`        | Internal endpoints only: missing or wrong internal token                                                                                                                                                                 |
 | 409    | `CONFLICT`            | Phone number already registered; the data changed concurrently (retrying may succeed)                                                                                                                                    |
+| 429    | `TOO_MANY_REQUESTS`   | Too many sign-in code requests for one phone number                                                                                                                                                                      |
 | 413    | `PAYLOAD_TOO_LARGE`   | Request body over 100 kB                                                                                                                                                                                                 |
 | 502    | `BAD_GATEWAY`         | The AI provider failed or returned an unusable response (agent only)                                                                                                                                                     |
-| 503    | `SERVICE_UNAVAILABLE` | The database cannot be reached; the AI agent or the internal endpoints are not configured                                                                                                                                |
+| 503    | `SERVICE_UNAVAILABLE` | The database cannot be reached; the AI agent, authentication, sign-in code delivery or the internal endpoints are not configured                                                                                         |
 | 500    | `INTERNAL_ERROR`      | Anything unexpected                                                                                                                                                                                                      |
 
-Error responses never contain SQL, database or Prisma messages, constraint names, stack traces, connection strings or credentials. Unexpected errors are logged on the server, with connection strings redacted.
+Error responses never contain SQL, database or Prisma messages, constraint names, stack traces, connection strings, credentials, JWT verification errors, codes or tokens. Unexpected errors are logged on the server, with connection strings redacted.
 
 ## Example session (curl)
+
+For local development with the development OTP provider, put these in your own `.env` (never committed):
+
+- `AUTH_JWT_SECRET` and `AUTH_OTP_PEPPER`: two different random secrets;
+- `AUTH_OTP_PROVIDER=dev`;
+- `AUTH_OTP_DEV_CODE`: an 8-digit code of your choice.
+
+The code below is read from your environment rather than typed out.
 
 ```sh
 API=http://127.0.0.1:4000/api/v1
 
-curl -s -X POST $API/users -H 'content-type: application/json' \
-  -d '{"phoneNumber":"+94000000901","preferredLanguage":"SI","displayName":"Demo"}'
-# → note the "id" and use it below as USER_ID
+CHALLENGE=$(curl -s -X POST $API/auth/request-otp -H 'content-type: application/json' \
+  -d '{"phoneNumber":"+94000000901"}' | node -pe 'JSON.parse(require("fs").readFileSync(0)).challengeId')
 
-curl -s -X PUT $API/users/$USER_ID/financial-profile -H 'content-type: application/json' \
+# -c stores the refresh cookie in a file; -b sends it back
+TOKEN=$(curl -s -c cookies.txt -X POST $API/auth/verify-otp -H 'content-type: application/json' \
+  -d "{\"challengeId\":\"$CHALLENGE\",\"code\":\"$AUTH_OTP_DEV_CODE\",\"preferredLanguage\":\"SI\"}" \
+  | node -pe 'JSON.parse(require("fs").readFileSync(0)).accessToken')
+AUTH="Authorization: Bearer $TOKEN"
+
+curl -s $API/auth/me -H "$AUTH"
+
+curl -s -X PUT $API/me/financial-profile -H "$AUTH" -H 'content-type: application/json' \
   -d '{"monthlyIncome":"150000.00","monthlyExpenses":"100000.00"}'
 
-curl -s -X POST $API/users/$USER_ID/goals -H 'content-type: application/json' \
+curl -s -X POST $API/me/goals -H "$AUTH" -H 'content-type: application/json' \
   -d '{"type":"EMERGENCY_FUND","name":"Emergency Fund","targetAmount":"300000.00","targetDate":"2027-06-30"}'
 
-curl -s "$API/users/$USER_ID/goals?status=ACTIVE&page=1&limit=20"
+curl -s "$API/me/goals?status=ACTIVE&page=1&limit=20" -H "$AUTH"
+curl -s $API/me/financial-context -H "$AUTH"
 
-# Calculations need no stored data
+# New access token (the cookie file is updated with the rotated refresh token)
+curl -s -b cookies.txt -c cookies.txt -X POST $API/auth/refresh
+
+curl -s -X POST $API/auth/logout -H "$AUTH"
+rm cookies.txt
+
+# Calculations need no sign-in
 curl -s -X POST $API/calculations/loan -H 'content-type: application/json' \
   -d '{"principal":"500000.00","annualInterestRate":"12.00","termMonths":36}'
 ```
 
-In PowerShell, use `Invoke-RestMethod`:
+In PowerShell, use `Invoke-RestMethod` (a `WebRequestSession` keeps the refresh cookie):
 
 ```powershell
 $api = "http://127.0.0.1:4000/api/v1"
-$user = Invoke-RestMethod -Method Post "$api/users" -ContentType "application/json" `
-  -Body '{"phoneNumber":"+94000000901","preferredLanguage":"SI"}'
-Invoke-RestMethod "$api/users/$($user.id)"
+$challenge = Invoke-RestMethod -Method Post "$api/auth/request-otp" -ContentType "application/json" `
+  -Body '{"phoneNumber":"+94000000901"}'
+$body = @{ challengeId = $challenge.challengeId; code = $env:AUTH_OTP_DEV_CODE } | ConvertTo-Json
+$signIn = Invoke-RestMethod -Method Post "$api/auth/verify-otp" -ContentType "application/json" `
+  -Body $body -SessionVariable session
+$headers = @{ Authorization = "Bearer $($signIn.accessToken)" }
+Invoke-RestMethod "$api/me/financial-context" -Headers $headers
 ```
 
 `+94 0…` numbers are never assigned in Sri Lanka, so they are safe to use as test data.

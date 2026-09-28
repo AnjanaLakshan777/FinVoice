@@ -13,19 +13,9 @@ import {
   type AnalyticsToolResponse,
   type AnalyticsTrendResponse,
 } from "@finvoice/contracts";
-import {
-  Body,
-  Controller,
-  Get,
-  Header,
-  HttpCode,
-  HttpStatus,
-  Post,
-  Query,
-  UseGuards,
-} from "@nestjs/common";
+import { Body, Controller, Get, Header, HttpCode, HttpStatus, Post, Query } from "@nestjs/common";
 
-import { InternalTokenGuard } from "../common/internal-token.guard.js";
+import { InternalOnly } from "../auth/auth.decorators.js";
 import { AnalyticsService } from "./analytics.service.js";
 
 /**
@@ -34,7 +24,7 @@ import { AnalyticsService } from "./analytics.service.js";
  * that returns events.
  */
 @Controller("internal/analytics")
-@UseGuards(InternalTokenGuard)
+@InternalOnly()
 export class AnalyticsIngestController {
   constructor(private readonly analytics: AnalyticsService) {}
 
@@ -55,7 +45,7 @@ export class AnalyticsIngestController {
  * users, content or amounts). Replaced by authenticated administration in a later step.
  */
 @Controller("internal/admin/analytics")
-@UseGuards(InternalTokenGuard)
+@InternalOnly()
 export class AnalyticsAdminController {
   constructor(private readonly analytics: AnalyticsService) {}
 

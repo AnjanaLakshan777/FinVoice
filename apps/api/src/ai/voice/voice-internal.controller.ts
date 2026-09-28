@@ -6,23 +6,14 @@ import {
   type VoiceToolExecutionRequest,
   type VoiceToolExecutionResponse,
 } from "@finvoice/contracts";
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Post,
-  Query,
-  UseGuards,
-} from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query } from "@nestjs/common";
 
 import {
   AnalyticsRecorder,
   elapsedMs,
   toolExecutionErrorCode,
 } from "../../analytics/analytics-recorder.js";
-import { InternalTokenGuard } from "../../common/internal-token.guard.js";
+import { InternalOnly } from "../../auth/auth.decorators.js";
 import {
   AGENT_VERSION,
   buildLiveSystemInstruction,
@@ -40,7 +31,7 @@ const VOICE_CALL_ID = "voice";
  * gateway never touches the database or duplicates any business logic.
  */
 @Controller("internal/voice")
-@UseGuards(InternalTokenGuard)
+@InternalOnly()
 export class VoiceInternalController {
   constructor(
     private readonly tools: AgentToolRegistry,

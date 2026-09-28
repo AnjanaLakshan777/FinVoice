@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { ApiErrorResponse, UserResponse } from "@finvoice/contracts";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -9,11 +11,20 @@ const PHONE_A = "+94000000201";
 const PHONE_B = "+94000000202";
 const UNKNOWN_ID = "00000000-0000-7000-8000-00000000dead";
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const USER_NOT_FOUND = { statusCode: 404, code: "NOT_FOUND", message: "User not found" };
+const UNAUTHENTICATED = {
+  statusCode: 401,
+  code: "UNAUTHORIZED",
+  message: "Missing or invalid access token",
+};
 
 let api: TestApi;
+/** An administrator's token. The role is read from the (validly signed) token only. */
+let admin: Record<string, string>;
 
 beforeAll(async () => {
   api = await startTestApi();
+  admin = await api.authHeaders(randomUUID(), "ADMIN");
 });
 
 afterAll(async () => {
@@ -24,19 +35,27 @@ beforeEach(async () => {
   await truncateAllTables(api.prisma);
 });
 
-function createUser(body: Record<string, unknown> = {}) {
-  return api.request<UserResponse>("POST", "/api/v1/users", {
-    phoneNumber: PHONE_A,
-    preferredLanguage: "SI",
-    ...body,
-  });
+function createUser(body: Record<string, unknown> = {}, headers = admin) {
+  return api.request<UserResponse>(
+    "POST",
+    "/api/v1/users",
+    { phoneNumber: PHONE_A, preferredLanguage: "SI", ...body },
+    headers,
+  );
+}
+
+/** Creates a user and returns it with that user's own Authorization header. */
+async function createSignedInUser(body: Record<string, unknown> = {}) {
+  const created = await createUser(body);
+  expect(created.status).toBe(201);
+  return { user: created.body, headers: await api.authHeaders(created.body.id) };
 }
 
 function fieldsOf(body: unknown): (string | null)[] {
   return (body as ApiErrorResponse).details?.map((detail) => detail.field) ?? [];
 }
 
-describe("POST /api/v1/users", () => {
+describe("POST /api/v1/users (ADMIN-only provisioning)", () => {
   it("creates a user with database-generated id and defaults", async () => {
     const response = await createUser({ displayName: "  Kamal  " });
 
@@ -54,7 +73,42 @@ describe("POST /api/v1/users", () => {
     expect(new Date(response.body.createdAt).toISOString()).toBe(response.body.createdAt);
 
     const stored = await api.prisma.user.findUniqueOrThrow({ where: { id: response.body.id } });
-    expect(stored).toMatchObject({ phoneNumber: PHONE_A, displayName: "Kamal", status: "ACTIVE" });
+    expect(stored).toMatchObject({
+      phoneNumber: PHONE_A,
+      displayName: "Kamal",
+      status: "ACTIVE",
+      role: "USER",
+    });
+  });
+
+  it("is not a public registration endpoint: 401 without a token", async () => {
+    const response = await createUser({}, {});
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual(UNAUTHENTICATED);
+    expect(await api.prisma.user.count()).toBe(0);
+  });
+
+  it("answers 403 to a signed-in USER", async () => {
+    const response = await createUser({}, await api.authHeaders(randomUUID(), "USER"));
+
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({
+      statusCode: 403,
+      code: "FORBIDDEN",
+      message: "You do not have permission to perform this action",
+    });
+    expect(await api.prisma.user.count()).toBe(0);
+  });
+
+  it("never lets the request choose a role, even for an ADMIN", async () => {
+    const response = await createUser({ role: "ADMIN" });
+
+    // Rejected as an unknown key (strict contract), not ignored.
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(response.text).toContain("role");
+    expect(await api.prisma.user.count()).toBe(0);
   });
 
   it("stores a blank display name as null", async () => {
@@ -88,7 +142,7 @@ describe("POST /api/v1/users", () => {
   });
 
   it("reports every missing required field", async () => {
-    const response = await api.request("POST", "/api/v1/users", {});
+    const response = await api.request("POST", "/api/v1/users", {}, admin);
 
     expect(response.status).toBe(400);
     expect(fieldsOf(response.body)).toEqual(
@@ -102,6 +156,7 @@ describe("POST /api/v1/users", () => {
       { password: "hunter2" },
       { id: UNKNOWN_ID },
       { status: "INACTIVE" },
+      { role: "USER" },
       { createdAt: "2020-01-01T00:00:00.000Z" },
     ]) {
       const response = await createUser(extra);
@@ -129,94 +184,151 @@ describe("POST /api/v1/users", () => {
 });
 
 describe("GET /api/v1/users/:userId", () => {
-  it("returns the user", async () => {
-    const created = await createUser({ displayName: "Kamal" });
+  it("returns the caller's own user", async () => {
+    const { user, headers } = await createSignedInUser({ displayName: "Kamal" });
 
-    const response = await api.request<UserResponse>("GET", `/api/v1/users/${created.body.id}`);
+    const response = await api.request<UserResponse>(
+      "GET",
+      `/api/v1/users/${user.id}`,
+      undefined,
+      headers,
+    );
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual(created.body);
+    expect(response.body).toEqual(user);
   });
 
-  it("returns 404 for an unknown user", async () => {
-    const response = await api.request("GET", `/api/v1/users/${UNKNOWN_ID}`);
+  it("accepts the caller's own id in upper case (UUIDs are case-insensitive)", async () => {
+    const { user, headers } = await createSignedInUser();
+
+    const response = await api.request(
+      "GET",
+      `/api/v1/users/${user.id.toUpperCase()}`,
+      undefined,
+      headers,
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it("answers another user's id exactly like an unknown id (404), without revealing it exists", async () => {
+    const { headers } = await createSignedInUser();
+    const other = await createUser({ phoneNumber: PHONE_B });
+
+    const otherUser = await api.request(
+      "GET",
+      `/api/v1/users/${other.body.id}`,
+      undefined,
+      headers,
+    );
+    const unknown = await api.request("GET", `/api/v1/users/${UNKNOWN_ID}`, undefined, headers);
+
+    expect(otherUser.status).toBe(404);
+    expect(otherUser.body).toEqual(USER_NOT_FOUND);
+    expect(unknown.body).toEqual(USER_NOT_FOUND);
+    expect(otherUser.text).not.toContain(PHONE_B);
+  });
+
+  it("gives an ADMIN no access to other users' records", async () => {
+    const created = await createUser();
+
+    const response = await api.request("GET", `/api/v1/users/${created.body.id}`, undefined, admin);
 
     expect(response.status).toBe(404);
-    expect(response.body).toEqual({
-      statusCode: 404,
-      code: "NOT_FOUND",
-      message: "User not found",
-    });
+  });
+
+  it("returns 404 when the token's user no longer exists", async () => {
+    const response = await api.request(
+      "GET",
+      `/api/v1/users/${UNKNOWN_ID}`,
+      undefined,
+      await api.authHeaders(UNKNOWN_ID),
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual(USER_NOT_FOUND);
   });
 
   it("returns 400 for an id that is not a UUID", async () => {
-    const response = await api.request("GET", "/api/v1/users/not-a-uuid");
+    const { headers } = await createSignedInUser();
+
+    const response = await api.request("GET", "/api/v1/users/not-a-uuid", undefined, headers);
 
     expect(response.status).toBe(400);
     expect(fieldsOf(response.body)).toEqual(["userId"]);
+  });
+
+  it("requires authentication before anything else (401, even for a malformed id)", async () => {
+    for (const path of [`/api/v1/users/${UNKNOWN_ID}`, "/api/v1/users/not-a-uuid"]) {
+      const response = await api.request("GET", path);
+
+      expect(response.status).toBe(401);
+      expect(response.body).toEqual(UNAUTHENTICATED);
+    }
   });
 });
 
 describe("PATCH /api/v1/users/:userId", () => {
   it("updates only the fields sent", async () => {
-    const created = await createUser({ displayName: "Kamal" });
+    const { user, headers } = await createSignedInUser({ displayName: "Kamal" });
 
-    const response = await api.request<UserResponse>("PATCH", `/api/v1/users/${created.body.id}`, {
-      preferredLanguage: "TA",
-      status: "INACTIVE",
-    });
+    const response = await api.request<UserResponse>(
+      "PATCH",
+      `/api/v1/users/${user.id}`,
+      { preferredLanguage: "TA" },
+      headers,
+    );
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
-      id: created.body.id,
+      id: user.id,
       phoneNumber: PHONE_A,
       displayName: "Kamal",
       preferredLanguage: "TA",
-      status: "INACTIVE",
-      createdAt: created.body.createdAt,
+      status: "ACTIVE",
+      createdAt: user.createdAt,
     });
-    expect(Date.parse(response.body.updatedAt)).toBeGreaterThanOrEqual(
-      Date.parse(created.body.updatedAt),
-    );
-    const stored = await api.prisma.user.findUniqueOrThrow({ where: { id: created.body.id } });
-    expect(stored).toMatchObject({ preferredLanguage: "TA", status: "INACTIVE" });
+    expect(Date.parse(response.body.updatedAt)).toBeGreaterThanOrEqual(Date.parse(user.updatedAt));
+    const stored = await api.prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(stored).toMatchObject({ preferredLanguage: "TA", status: "ACTIVE", role: "USER" });
   });
 
-  it("changes the phone number and clears the display name with null", async () => {
-    const created = await createUser({ displayName: "Kamal" });
+  it("clears the display name with null", async () => {
+    const { user, headers } = await createSignedInUser({ displayName: "Kamal" });
 
-    const response = await api.request<UserResponse>("PATCH", `/api/v1/users/${created.body.id}`, {
-      phoneNumber: PHONE_B,
-      displayName: null,
-    });
+    const response = await api.request<UserResponse>(
+      "PATCH",
+      `/api/v1/users/${user.id}`,
+      { displayName: null },
+      headers,
+    );
 
     expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ phoneNumber: PHONE_B, displayName: null });
+    expect(response.body).toMatchObject({ displayName: null });
   });
 
-  it("rejects a phone number that belongs to another user with 409", async () => {
-    await createUser();
-    const other = await createUser({ phoneNumber: PHONE_B });
+  it.each([
+    { body: { phoneNumber: PHONE_B }, what: "the login phone number" },
+    { body: { status: "INACTIVE" }, what: "the account status" },
+    { body: { role: "ADMIN" }, what: "the role" },
+  ])("rejects $body: a user cannot change $what", async ({ body }) => {
+    const { user, headers } = await createSignedInUser();
 
-    const response = await api.request("PATCH", `/api/v1/users/${other.body.id}`, {
-      phoneNumber: PHONE_A,
-    });
+    const response = await api.request("PATCH", `/api/v1/users/${user.id}`, body, headers);
 
-    expect(response.status).toBe(409);
-    expect(response.body).toMatchObject({ code: "CONFLICT" });
-    const stored = await api.prisma.user.findUniqueOrThrow({ where: { id: other.body.id } });
-    expect(stored.phoneNumber).toBe(PHONE_B);
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ code: "VALIDATION_ERROR" });
+    const stored = await api.prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(stored).toMatchObject({ phoneNumber: PHONE_A, status: "ACTIVE", role: "USER" });
   });
 
   it.each([
     [{ preferredLanguage: "si" }, "preferredLanguage"],
-    [{ status: "DELETED" }, "status"],
-    [{ phoneNumber: "12345" }, "phoneNumber"],
     [{ displayName: "x".repeat(101) }, "displayName"],
   ])("rejects the invalid value %j", async (body, field) => {
-    const created = await createUser();
+    const { user, headers } = await createSignedInUser();
 
-    const response = await api.request("PATCH", `/api/v1/users/${created.body.id}`, body);
+    const response = await api.request("PATCH", `/api/v1/users/${user.id}`, body, headers);
 
     expect(response.status).toBe(400);
     expect(fieldsOf(response.body)).toContain(field);
@@ -225,21 +337,49 @@ describe("PATCH /api/v1/users/:userId", () => {
   it.each([{ id: UNKNOWN_ID }, { createdAt: "2020-01-01T00:00:00.000Z" }, { updatedAt: "x" }, {}])(
     "rejects %j",
     async (body) => {
-      const created = await createUser();
+      const { user, headers } = await createSignedInUser();
 
-      const response = await api.request("PATCH", `/api/v1/users/${created.body.id}`, body);
+      const response = await api.request("PATCH", `/api/v1/users/${user.id}`, body, headers);
 
       expect(response.status).toBe(400);
       expect(response.body).toMatchObject({ code: "VALIDATION_ERROR" });
     },
   );
 
-  it("returns 404 for an unknown user", async () => {
+  it("cannot change another user (404) and leaves them unchanged", async () => {
+    const { headers } = await createSignedInUser();
+    const other = await createUser({ phoneNumber: PHONE_B, displayName: "Nimal" });
+
+    const response = await api.request(
+      "PATCH",
+      `/api/v1/users/${other.body.id}`,
+      { displayName: "Changed" },
+      headers,
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual(USER_NOT_FOUND);
+    const stored = await api.prisma.user.findUniqueOrThrow({ where: { id: other.body.id } });
+    expect(stored.displayName).toBe("Nimal");
+  });
+
+  it("returns 404 when the token's user no longer exists", async () => {
+    const response = await api.request(
+      "PATCH",
+      `/api/v1/users/${UNKNOWN_ID}`,
+      { preferredLanguage: "EN" },
+      await api.authHeaders(UNKNOWN_ID),
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual(USER_NOT_FOUND);
+  });
+
+  it("requires authentication (401)", async () => {
     const response = await api.request("PATCH", `/api/v1/users/${UNKNOWN_ID}`, {
       preferredLanguage: "EN",
     });
 
-    expect(response.status).toBe(404);
-    expect(response.body).toMatchObject({ code: "NOT_FOUND", message: "User not found" });
+    expect(response.status).toBe(401);
   });
 });

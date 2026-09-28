@@ -3,6 +3,8 @@ import { Module } from "@nestjs/common";
 import { AgentModule } from "./ai/agent/agent.module.js";
 import { AnalyticsRecorderModule } from "./analytics/analytics-recorder.module.js";
 import { AnalyticsModule } from "./analytics/analytics.module.js";
+import { AuthModule } from "./auth/auth.module.js";
+import { MeModule } from "./me/me.module.js";
 import { VoiceInternalModule } from "./ai/voice/voice-internal.module.js";
 import { FinancialContextModule } from "./financial-context/financial-context.module.js";
 import { CalculationsModule } from "./calculations/calculations.module.js";
@@ -20,8 +22,12 @@ import { UsersModule } from "./users/users.module.js";
     ApiConfigModule,
     DatabaseModule,
     AnalyticsRecorderModule,
+    // Registers the global guards: every route below needs an access token unless it is marked
+    // @Public() or @InternalOnly().
+    AuthModule,
     HealthModule,
     UsersModule,
+    MeModule,
     FinancialProfilesModule,
     FinancialGoalsModule,
     CalculationsModule,

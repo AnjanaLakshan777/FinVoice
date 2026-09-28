@@ -1,4 +1,7 @@
-import type { ApiConfig } from "@finvoice/config";
+import { randomUUID } from "node:crypto";
+
+import type { ApiConfig, AuthConfig } from "@finvoice/config";
+import type { AuthTokenResponse, RequestOtpResponse, UserRole } from "@finvoice/contracts";
 import type { LoggerService } from "@nestjs/common";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { Test } from "@nestjs/testing";
@@ -7,10 +10,22 @@ import { inject } from "vitest";
 import { LANGUAGE_MODEL, type LanguageModel } from "../../src/ai/model/language-model.js";
 import { AppModule } from "../../src/app.module.js";
 import { configureApp } from "../../src/app.setup.js";
+import { AccessTokenService } from "../../src/auth/access-token.service.js";
+import { OTP_DELIVERY } from "../../src/auth/auth.service.js";
+import type { OtpDeliveryProvider } from "../../src/auth/otp-delivery.js";
 import { API_CONFIG } from "../../src/config/api-config.module.js";
 import { PrismaService } from "../../src/database/prisma.service.js";
+import { testAuthConfig } from "../support/auth.js";
 
-export type ApiResponse<T = unknown> = { status: number; body: T; text: string };
+export type ApiResponse<T = unknown> = { status: number; body: T; text: string; headers: Headers };
+
+/** A completed phone-OTP sign-in. */
+export type SignedIn = {
+  accessToken: string;
+  /** `finvoice_refresh=<token>`, ready for a Cookie header. */
+  refreshCookie: string;
+  body: AuthTokenResponse;
+};
 
 export type TestApi = {
   /** The application's own PrismaService, for arranging data and checking persistence. */
@@ -24,6 +39,15 @@ export type TestApi = {
     headers?: Record<string, string>,
   ): Promise<ApiResponse<T>>;
   close(): Promise<void>;
+  /** The authentication settings the application runs with (ephemeral test secrets). */
+  auth: AuthConfig;
+  /**
+   * `Authorization: Bearer` header with a validly signed access token for `userId`, as if the
+   * user had signed in (the guard does not look the session up).
+   */
+  authHeaders(userId: string, role?: UserRole): Promise<Record<string, string>>;
+  /** Full phone-OTP sign-in through the HTTP API with the development code. */
+  signIn(phoneNumber: string, registration?: Record<string, unknown>): Promise<SignedIn>;
 };
 
 export type TestApiOptions = {
@@ -36,6 +60,10 @@ export type TestApiOptions = {
   internalToken?: string;
   /** Receives everything the application logs; by default logging is off. */
   logger?: LoggerService;
+  /** Authentication settings; by default enabled with fresh random secrets and dev OTP code. */
+  auth?: AuthConfig;
+  /** Replaces the configured OTP delivery provider (e.g. a recording or failing SMS double). */
+  otpDelivery?: OtpDeliveryProvider;
 };
 
 /**
@@ -49,6 +77,8 @@ export async function startTestApi(options: TestApiOptions | string = {}): Promi
     gemini,
     internalToken,
     logger,
+    auth = testAuthConfig(),
+    otpDelivery,
   } = typeof options === "string" ? { databaseUrl: options } : options;
   const config: ApiConfig = {
     nodeEnv: "test",
@@ -58,6 +88,7 @@ export async function startTestApi(options: TestApiOptions | string = {}): Promi
     gemini: gemini ?? { apiKey: null, model: "gemini-test-model" },
     internal: { token: internalToken ?? null },
     analytics: { retentionDays: 90 },
+    auth,
   };
   let builder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(API_CONFIG)
@@ -65,15 +96,50 @@ export async function startTestApi(options: TestApiOptions | string = {}): Promi
   if (languageModel) {
     builder = builder.overrideProvider(LANGUAGE_MODEL).useValue(languageModel);
   }
+  if (otpDelivery) {
+    builder = builder.overrideProvider(OTP_DELIVERY).useValue(otpDelivery);
+  }
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: logger ?? false });
   await configureApp(app);
   await app.listen(0, "127.0.0.1");
   const baseUrl = await app.getUrl();
 
-  return {
+  const api: TestApi = {
     prisma: app.get(PrismaService),
     get: (token) => app.get(token),
+    auth,
+    async authHeaders(userId, role = "USER") {
+      const token = await app
+        .get(AccessTokenService)
+        .issue({ userId, role, sessionId: randomUUID() });
+      return { authorization: `Bearer ${token}` };
+    },
+    async signIn(phoneNumber, registration = {}) {
+      const code = auth.otp.devCode;
+      if (code === null) {
+        throw new Error("signIn needs the development OTP provider");
+      }
+      const challenge = await api.request<RequestOtpResponse>("POST", "/api/v1/auth/request-otp", {
+        phoneNumber,
+      });
+      if (challenge.status !== 202) {
+        throw new Error(`request-otp answered ${String(challenge.status)}`);
+      }
+      const verified = await api.request<AuthTokenResponse>("POST", "/api/v1/auth/verify-otp", {
+        challengeId: challenge.body.challengeId,
+        code,
+        ...registration,
+      });
+      if (verified.status !== 200) {
+        throw new Error(`verify-otp answered ${String(verified.status)}`);
+      }
+      return {
+        accessToken: verified.body.accessToken,
+        refreshCookie: refreshCookieOf(verified.headers, auth.refreshCookie.name),
+        body: verified.body,
+      };
+    },
     async request<T>(
       method: string,
       path: string,
@@ -90,8 +156,24 @@ export async function startTestApi(options: TestApiOptions | string = {}): Promi
             }),
       });
       const text = await response.text();
-      return { status: response.status, body: (text ? JSON.parse(text) : undefined) as T, text };
+      return {
+        status: response.status,
+        body: (text ? JSON.parse(text) : undefined) as T,
+        text,
+        headers: response.headers,
+      };
     },
     close: () => app.close(),
   };
+  return api;
+}
+
+/** `name=value` of the refresh cookie set by a response (throws if there is none). */
+export function refreshCookieOf(headers: Headers, name: string): string {
+  const cookie = headers.getSetCookie().find((value) => value.startsWith(`${name}=`));
+  const pair = cookie?.split(";")[0];
+  if (pair === undefined || pair === `${name}=`) {
+    throw new Error("No refresh cookie in the response");
+  }
+  return pair;
 }

@@ -1,6 +1,6 @@
 # FinVoice system overview
 
-> **Status:** Step 10 (admin dashboard and analytics). The repository structure, service skeletons, health endpoints, the core database tables, a validated REST API for users, financial profiles and goals ([domain-api.md](../api/domain-api.md)), a deterministic calculation engine for loans, savings and budgets ([financial-calculation-engine.md](financial-calculation-engine.md)), a curated, source-backed knowledge base with read-only retrieval ([financial-knowledge-base.md](financial-knowledge-base.md)), a text AI agent that uses them through allowlisted tools ([ai-agent.md](ai-agent.md)) a local/development real-time browser voice experience over Gemini Live ([browser-voice.md](browser-voice.md)), and a personal financial context and financial-literacy layer reachable only through a token-protected internal API ([personal-financial-context.md](personal-financial-context.md)), ScamShield, a deterministic, source-grounded scam warning-indicator check that runs without Gemini ([scam-shield.md](scam-shield.md)), and privacy-safe operational analytics with a temporary, disabled-by-default admin dashboard behind the internal token ([analytics.md](analytics.md)) exist. Everything else in this document describes the **intended** architecture and will be built in later steps. The database design is documented in [database.md](database.md).
+> **Status:** Step 11 (authentication and authorisation). The repository structure, service skeletons, health endpoints, the core database tables, a validated REST API for users, financial profiles and goals ([domain-api.md](../api/domain-api.md)), a deterministic calculation engine for loans, savings and budgets ([financial-calculation-engine.md](financial-calculation-engine.md)), a curated, source-backed knowledge base with read-only retrieval ([financial-knowledge-base.md](financial-knowledge-base.md)), a text AI agent that uses them through allowlisted tools ([ai-agent.md](ai-agent.md)) a local/development real-time browser voice experience over Gemini Live ([browser-voice.md](browser-voice.md)), and a personal financial context and financial-literacy layer reachable only through a token-protected internal API ([personal-financial-context.md](personal-financial-context.md)), ScamShield, a deterministic, source-grounded scam warning-indicator check that runs without Gemini ([scam-shield.md](scam-shield.md)), privacy-safe operational analytics with a temporary, disabled-by-default admin dashboard behind the internal token ([analytics.md](analytics.md)), and phone-OTP authentication with JWT access tokens, rotating refresh sessions, roles and owner checks on all personal data, plus an authenticated `/api/v1/me` API ([authentication-authorization.md](authentication-authorization.md); no real SMS provider yet) exist. Everything else in this document describes the **intended** architecture and will be built in later steps. The database design is documented in [database.md](database.md).
 
 ## Purpose
 
@@ -71,7 +71,24 @@ Gemini Live                            Backend API (apps/api, /internal/voice/*)
     the gateway to the API)            finance engine · knowledge service → PostgreSQL
 ```
 
-Browser voice uses a WebSocket between the browser and the voice gateway. The gateway holds the Gemini API key, opens one Gemini Live session per browser connection, and runs the model's tool calls through two token-protected internal API endpoints that reuse the Step 6 tool registry, so the gateway has no business logic and no database access. The browser only chooses a language and streams audio; it never receives the key. There is no authentication yet, so this is a local/development setup. Details: [browser-voice.md](browser-voice.md).
+Browser voice uses a WebSocket between the browser and the voice gateway. The gateway holds the Gemini API key, opens one Gemini Live session per browser connection, and runs the model's tool calls through two token-protected internal API endpoints that reuse the Step 6 tool registry, so the gateway has no business logic and no database access. The browser only chooses a language and streams audio; it never receives the key. Voice is not connected to user sign-in (Step 11 authenticates the API, not the voice gateway), so this is a local/development setup. Details: [browser-voice.md](browser-voice.md).
+
+## Authentication and trust boundaries (Step 11)
+
+```text
+Browser / app ──Bearer access token──▶ /api/v1/*   (public routes marked explicitly; everything else needs a token)
+      │  └──HttpOnly refresh cookie──▶ /api/v1/auth/refresh
+      │
+Voice gateway, web server ──INTERNAL_API_TOKEN──▶ /internal/*   (service-to-service only)
+```
+
+- **End users** sign in with a phone number and a one-time code (`/api/v1/auth/*`). They then use a 15-minute JWT access token and a rotating 30-day refresh session.
+- **Global guard, secure by default:** the API checks every route. Public routes (health, calculations, knowledge, the general agent, ScamShield, sign-in) are marked `@Public()`; internal routes are marked `@InternalOnly()`.
+- **Ownership:** personal data is served only to its owner: `/users/:userId/*` for the caller's own id, and `/api/v1/me/*`. Another user's id is hidden behind 404.
+- **Roles:** `ADMIN` is a server-assigned role for explicit admin operations. It never grants access to other users' personal data.
+- **Two trust domains, never mixed:** the internal token remains the separate credential for trusted services. Neither credential opens the other domain.
+- **Not personalised yet:** the AI agent and browser voice are unchanged and anonymous.
+- **Not production-ready yet:** no SMS provider is integrated. Production sign-in answers 503 until one is added.
 
 ## Architectural principles
 
@@ -97,7 +114,9 @@ Browser voice uses a WebSocket between the browser and the voice gateway. The ga
 | `apps/api/src/analytics`         | Privacy-safe operational analytics (aggregates only)     | `/internal/analytics/events`, `/internal/admin/analytics/*` (token-protected) |
 | `apps/web/app/admin`             | Temporary admin dashboard (server-rendered)              | `/admin`, disabled unless `ADMIN_DASHBOARD_ENABLED=true`                      |
 | `apps/api/prisma/knowledge`      | Curated knowledge content and insert-only seed           | 12 CBSL-sourced articles                                                      |
-| `apps/api/src/financial-context` | Personal financial context and literacy (internal only)  | `/internal/users/*` (token-protected)                                         |
+| `apps/api/src/financial-context` | Personal financial context and literacy                  | `/internal/users/*` (token-protected), `/api/v1/me/*-context`                 |
+| `apps/api/src/auth`              | Authentication and authorisation (OTP, JWT, sessions)    | `/api/v1/auth/*`, global guards, `pnpm auth:cleanup`                          |
+| `apps/api/src/me`                | The signed-in user's own data                            | `/api/v1/me/*`                                                                |
 | `apps/api/src/ai`                | Text AI agent: Gemini adapter, tool registry, agent      | `POST /api/v1/agent/chat`, internal voice endpoints                           |
 | `packages/config`                | Environment parsing and validation                       | API and voice gateway loaders                                                 |
 | `docker-compose.yml`             | Local infrastructure                                     | PostgreSQL 18                                                                 |
@@ -105,4 +124,4 @@ Browser voice uses a WebSocket between the browser and the voice gateway. The ga
 
 ## Not yet built
 
-In later steps: authentication and authorisation (which will enable personalised answers through the prepared user-context tools, and replace the admin dashboard's temporary internal-token boundary), Asterisk and SIP configuration, the AudioSocket server (reusing the Step 7 voice session and Gemini Live adapter), RAG over the knowledge base, knowledge administration, Gemini explanations of ScamShield results (the engine stays authoritative), rate limiting, and deployment.
+In later steps: a real SMS OTP provider, web sign-in (which will connect the admin dashboard to authenticated `ADMIN` users instead of its temporary internal-token boundary), an authenticated voice-session identity and personalised answers through the prepared user-context tools, distributed rate limiting, Asterisk and SIP configuration, the AudioSocket server (reusing the Step 7 voice session and Gemini Live adapter), RAG over the knowledge base, knowledge administration, Gemini explanations of ScamShield results (the engine stays authoritative), and deployment.

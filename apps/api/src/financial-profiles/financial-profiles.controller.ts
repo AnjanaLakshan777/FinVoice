@@ -7,9 +7,12 @@ import {
 } from "@finvoice/contracts";
 import { Body, Controller, Get, Param, Put } from "@nestjs/common";
 
+import { OwnUserOnly } from "../auth/auth.decorators.js";
 import { FinancialProfilesService } from "./financial-profiles.service.js";
 
+/** The caller's own profile only (another user's id answers 404). See also /me/financial-profile. */
 @Controller("users/:userId/financial-profile")
+@OwnUserOnly()
 export class FinancialProfilesController {
   constructor(private readonly profiles: FinancialProfilesService) {}
 

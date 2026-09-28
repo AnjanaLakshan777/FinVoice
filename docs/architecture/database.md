@@ -1,6 +1,6 @@
 # Database
 
-> **Status:** Step 5. The core domain tables are read and written through the domain API ([docs/api/domain-api.md](../api/domain-api.md)). The knowledge base tables (`knowledge_sources`, `knowledge_articles`, `knowledge_article_translations`) are documented in [financial-knowledge-base.md](financial-knowledge-base.md).
+> **Status:** Step 11. The core domain tables are read and written through the domain API ([docs/api/domain-api.md](../api/domain-api.md)). Step 11 added `users.role` and the authentication tables `otp_challenges` and `auth_sessions` ([below](#authentication-tables); design in [authentication-authorization.md](authentication-authorization.md)). The knowledge base tables (`knowledge_sources`, `knowledge_articles`, `knowledge_article_translations`) are documented in [financial-knowledge-base.md](financial-knowledge-base.md).
 
 ## Choice of database and toolkit
 
@@ -29,9 +29,11 @@ users 1 ──── 0..1 financial_profiles      (financial_profiles.user_id UN
 users 1 ──── 0..N financial_goals
 users 1 ──── 0..1 financial_literacy_profiles        (user_id UNIQUE)
 users 1 ──── 0..N financial_literacy_topic_progress  (UNIQUE (user_id, topic))
+users 1 ──── 0..N auth_sessions                      (refresh sessions, Step 11)
+otp_challenges                                       (keyed by phone number, no FK: see below)
 ```
 
-All four foreign keys are `ON DELETE CASCADE ON UPDATE RESTRICT`. The literacy tables (Step 8) are described in [personal-financial-context.md](personal-financial-context.md). The analytics table (Step 10, [below](#analytics_events)) is deliberately linked to nothing.
+All five foreign keys are `ON DELETE CASCADE ON UPDATE RESTRICT`. The literacy tables (Step 8) are described in [personal-financial-context.md](personal-financial-context.md). The analytics table (Step 10, [below](#analytics_events)) is deliberately linked to nothing, and so are OTP challenges: a challenge exists before any account does, and must not reveal whether one exists.
 
 - A profile or goal has no meaning without its user. Deleting a user is reserved for deliberate erasure of their personal data (as Sri Lanka's Personal Data Protection Act allows), and cascading makes that erasure complete.
 - In normal operation a user is deactivated (`status = INACTIVE`), not deleted.
@@ -47,6 +49,7 @@ All four foreign keys are `ON DELETE CASCADE ON UPDATE RESTRICT`. The literacy t
 | `preferred_language` | `language`       | NOT NULL (`SI`, `TA`, `EN`), no default                  |
 | `timezone`           | `varchar(64)`    | NOT NULL, default `Asia/Colombo` (IANA name), not blank  |
 | `status`             | `user_status`    | NOT NULL, default `ACTIVE` (`ACTIVE`, `INACTIVE`)        |
+| `role`               | `user_role`      | NOT NULL, default `USER` (`USER`, `ADMIN`)               |
 | `created_at`         | `timestamptz(3)` | NOT NULL, default `now()`                                |
 | `updated_at`         | `timestamptz(3)` | NOT NULL, default `now()`, set by Prisma on every update |
 
@@ -54,7 +57,8 @@ All four foreign keys are `ON DELETE CASCADE ON UPDATE RESTRICT`. The literacy t
 - The display name is optional: callers may not give one.
 - There is no default preferred language. The code that creates a user must choose one explicitly (for example from the language the caller selected), rather than silently falling back.
 - No external identifier yet. Nothing outside FinVoice identifies users today, and adding a nullable unique column later is a non-breaking migration.
-- No passwords or credentials are stored.
+- No passwords or credentials are stored. Sign-in uses one-time codes (`otp_challenges`), and sessions store only token hashes (`auth_sessions`).
+- `role` (Step 11) is never set from a client request. Existing users received `USER` from the column default when the migration ran. `ADMIN` is assigned only by a deliberate, direct database change (see [authentication-authorization.md](authentication-authorization.md#25-admin-authorisation)); no seed or migration creates an administrator.
 
 ### `financial_profiles`
 
@@ -117,6 +121,7 @@ Enumerations are native PostgreSQL enum types, with the same names in TypeScript
 | ----------------------- | ------------------------------------------------------ |
 | `language`              | `SI` (Sinhala), `TA` (Tamil), `EN` (English)           |
 | `user_status`           | `ACTIVE`, `INACTIVE`                                   |
+| `user_role`             | `USER`, `ADMIN`                                        |
 | `financial_goal_type`   | `SAVINGS`, `EMERGENCY_FUND`, `DEBT_REPAYMENT`, `OTHER` |
 | `financial_goal_status` | `ACTIVE`, `COMPLETED`, `CANCELLED`                     |
 
@@ -140,6 +145,8 @@ Prisma's schema language cannot express CHECK constraints, so they are written b
 | `financial_goals_current_amount_non_negative_check`      | `>= 0` (not NaN)                  |
 | `financial_goals_current_amount_within_target_check`     | `current_amount <= target_amount` |
 
+The authentication tables' constraints are listed [with the tables](#authentication-tables).
+
 The database is the last line of defence, not the only one. The domain API validates the same rules first, so clients get clear validation errors instead of constraint violations.
 
 ### `analytics_events`
@@ -152,6 +159,226 @@ Privacy-safe operational analytics (Step 10). Design: [analytics.md](analytics.m
 - **No JSON `metadata` column:** an unrestricted JSON field would make it easy to store messages, transcripts, amounts, credentials, ScamShield content or tool arguments by accident. Explicit typed columns make that impossible.
 - **Retention:** rows are deleted after `ANALYTICS_RETENTION_DAYS` (default 90) by `pnpm analytics:cleanup`, which touches only this table. Nothing is deleted at startup.
 - **Timestamps:** `occurred_at` is set by the API in UTC. Dashboard days are grouped in Asia/Colombo.
+
+## Authentication tables
+
+Step 11, migration `20260928063800_authentication`. The migration is additive only: a new enum, a column with a default, and two new tables. It also adds `FORBIDDEN` and `TOO_MANY_REQUESTS` to `analytics_error_code`. No existing row or column is changed or removed. Design: [authentication-authorization.md](authentication-authorization.md).
+
+### `otp_challenges`
+
+One row per sign-in code request.
+
+| Column          | Type             | Rules                                                                    |
+| --------------- | ---------------- | ------------------------------------------------------------------------ |
+| `id`            | `uuid`           | PK, **generated by the API** (random v4): part of the HMAC input         |
+| `phone_number`  | `varchar(16)`    | NOT NULL, E.164                                                          |
+| `code_hash`     | `char(64)`       | NOT NULL, lowercase hex: `HMAC-SHA-256(AUTH_OTP_PEPPER, id:code)`        |
+| `expires_at`    | `timestamptz(3)` | NOT NULL, after `created_at`                                             |
+| `attempts`      | `integer`        | NOT NULL, default 0, `0 ≤ attempts ≤ max_attempts`                       |
+| `max_attempts`  | `integer`        | NOT NULL, 1–20 (copied from configuration when the challenge is created) |
+| `created_at`    | `timestamptz(3)` | NOT NULL                                                                 |
+| `consumed_at`   | `timestamptz(3)` | nullable: set once, atomically, by a successful verification             |
+| `superseded_at` | `timestamptz(3)` | nullable: set when a newer code is requested (or delivery failed)        |
+
+- **What is not stored:** no plaintext code, message text, delivery-provider response, IP address or user agent.
+- **Keyed by phone number, not user:** a challenge is not linked to `users`. It exists before an account does, and linking it would reveal whether one exists.
+- **Constraints:**
+  - `otp_challenges_phone_number_e164_check`, `_code_hash_format_check` (`^[0-9a-f]{64}# Database
+
+> **Status:** Step 11. The core domain tables are read and written through the domain API ([docs/api/domain-api.md](../api/domain-api.md)). Step 11 added `users.role` and the authentication tables `otp_challenges` and `auth_sessions` ([below](#authentication-tables); design in [authentication-authorization.md](authentication-authorization.md)). The knowledge base tables (`knowledge_sources`, `knowledge_articles`, `knowledge_article_translations`) are documented in [financial-knowledge-base.md](financial-knowledge-base.md).
+
+## Choice of database and toolkit
+
+**PostgreSQL 18** is the primary system of record: relational integrity, strong constraints, exact `NUMERIC` arithmetic for money, ICU collations for Sinhala, Tamil and English text, and native `uuidv7()`. See [ADR 0001](../decisions/0001-repository-foundation.md) for the container setup.
+
+**Prisma 7** is the database toolkit, used for the schema, migrations and a typed client:
+
+- The schema (`apps/api/prisma/schema.prisma`) is the single readable description of the tables.
+- `prisma migrate` produces plain, reviewable SQL migrations and tracks what has been applied.
+- The generated client is fully typed and compiled into the API's own source (`src/generated/prisma`, git-ignored and regenerated on install and build).
+- Prisma 7 runs queries through a **driver adapter** (`@prisma/adapter-pg` on the standard `pg` driver), so there is no separate query-engine binary at runtime.
+
+The database belongs to the **backend API** (`apps/api`), which is the only service that connects to it (see [system overview](system-overview.md)). The schema, migrations and seed live in `apps/api/prisma/`.
+
+### Connection
+
+- The API reads `DATABASE_URL` through the existing `@finvoice/config` loader (`loadApiConfig`), which validates it as a `postgres://` / `postgresql://` URL. It is never hard-coded, logged or echoed in validation errors.
+- `DatabaseModule` (global) provides `PrismaService`, the application's single client and `pg` connection pool. The pool closes when the application shuts down (`enableShutdownHooks`).
+- Connections open lazily, with a 5 s connection timeout. The API starts even if PostgreSQL is briefly down; `GET /health/ready` reports whether the database is reachable (503 when it is not), while `GET /health` stays a pure liveness check.
+- The Prisma CLI reads `DATABASE_URL` in `apps/api/prisma.config.ts`, loading the root `.env` only when the file exists. It never overrides variables that are already set.
+
+## Entities and relationships
+
+```text
+users 1 ──── 0..1 financial_profiles      (financial_profiles.user_id UNIQUE)
+users 1 ──── 0..N financial_goals
+users 1 ──── 0..1 financial_literacy_profiles        (user_id UNIQUE)
+users 1 ──── 0..N financial_literacy_topic_progress  (UNIQUE (user_id, topic))
+users 1 ──── 0..N auth_sessions                      (refresh sessions, Step 11)
+otp_challenges                                       (keyed by phone number, no FK: see below)
+```
+
+All five foreign keys are `ON DELETE CASCADE ON UPDATE RESTRICT`. The literacy tables (Step 8) are described in [personal-financial-context.md](personal-financial-context.md). The analytics table (Step 10, [below](#analytics_events)) is deliberately linked to nothing, and so are OTP challenges: a challenge exists before any account does, and must not reveal whether one exists.
+
+- A profile or goal has no meaning without its user. Deleting a user is reserved for deliberate erasure of their personal data (as Sri Lanka's Personal Data Protection Act allows), and cascading makes that erasure complete.
+- In normal operation a user is deactivated (`status = INACTIVE`), not deleted.
+- Primary keys never change, so updates to them are restricted.
+
+### `users`
+
+| Column               | Type             | Rules                                                    |
+| -------------------- | ---------------- | -------------------------------------------------------- |
+| `id`                 | `uuid`           | PK, default `uuidv7()`                                   |
+| `phone_number`       | `varchar(16)`    | NOT NULL, UNIQUE, E.164 (`^\+[1-9][0-9]{7,14}$`)         |
+| `display_name`       | `varchar(100)`   | nullable; not blank when present                         |
+| `preferred_language` | `language`       | NOT NULL (`SI`, `TA`, `EN`), no default                  |
+| `timezone`           | `varchar(64)`    | NOT NULL, default `Asia/Colombo` (IANA name), not blank  |
+| `status`             | `user_status`    | NOT NULL, default `ACTIVE` (`ACTIVE`, `INACTIVE`)        |
+| `role`               | `user_role`      | NOT NULL, default `USER` (`USER`, `ADMIN`)               |
+| `created_at`         | `timestamptz(3)` | NOT NULL, default `now()`                                |
+| `updated_at`         | `timestamptz(3)` | NOT NULL, default `now()`, set by Prisma on every update |
+
+- A caller is identified by their phone number, so it is required and unique. Numbers are stored normalised to E.164, and normalisation is the application's job. The database only enforces the format.
+- The display name is optional: callers may not give one.
+- There is no default preferred language. The code that creates a user must choose one explicitly (for example from the language the caller selected), rather than silently falling back.
+- No external identifier yet. Nothing outside FinVoice identifies users today, and adding a nullable unique column later is a non-breaking migration.
+- No passwords or credentials are stored. Sign-in uses one-time codes (`otp_challenges`), and sessions store only token hashes (`auth_sessions`).
+- `role` (Step 11) is never set from a client request. Existing users received `USER` from the column default when the migration ran. `ADMIN` is assigned only by a deliberate, direct database change (see [authentication-authorization.md](authentication-authorization.md#25-admin-authorisation)); no seed or migration creates an administrator.
+
+### `financial_profiles`
+
+| Column             | Type             | Rules                                 |
+| ------------------ | ---------------- | ------------------------------------- |
+| `id`               | `uuid`           | PK, default `uuidv7()`                |
+| `user_id`          | `uuid`           | NOT NULL, UNIQUE, FK → `users.id`     |
+| `monthly_income`   | `numeric(14,2)`  | nullable; `>= 0`, not NaN             |
+| `monthly_expenses` | `numeric(14,2)`  | nullable; `>= 0`, not NaN             |
+| `currency`         | `char(3)`        | NOT NULL, default `LKR`, `^[A-Z]{3}$` |
+| `created_at`       | `timestamptz(3)` | NOT NULL, default `now()`             |
+| `updated_at`       | `timestamptz(3)` | NOT NULL, default `now()`             |
+
+Monthly amounts are nullable because users give this information during conversations, often one figure at a time. `NULL` means "not provided yet", which is different from `0`.
+
+### `financial_goals`
+
+| Column           | Type                    | Rules                                                      |
+| ---------------- | ----------------------- | ---------------------------------------------------------- |
+| `id`             | `uuid`                  | PK, default `uuidv7()`                                     |
+| `user_id`        | `uuid`                  | NOT NULL, FK → `users.id`                                  |
+| `type`           | `financial_goal_type`   | NOT NULL                                                   |
+| `name`           | `varchar(120)`          | NOT NULL, not blank                                        |
+| `target_amount`  | `numeric(14,2)`         | NOT NULL, `> 0`, not NaN                                   |
+| `current_amount` | `numeric(14,2)`         | NOT NULL, default `0`, `>= 0`, not NaN, `<= target_amount` |
+| `currency`       | `char(3)`               | NOT NULL, default `LKR`, `^[A-Z]{3}$`                      |
+| `target_date`    | `date`                  | nullable                                                   |
+| `status`         | `financial_goal_status` | NOT NULL, default `ACTIVE`                                 |
+| `created_at`     | `timestamptz(3)`        | NOT NULL, default `now()`                                  |
+| `updated_at`     | `timestamptz(3)`        | NOT NULL, default `now()`                                  |
+
+`currency` is an addition to the originally specified fields. An amount without a currency is ambiguous, and a goal can exist without a financial profile, so the goal must say which currency it is in. `target_date` is a calendar `date`, not a timestamp: a deadline is a day, independent of time zone.
+
+## Identifiers: UUIDv7
+
+All primary keys are `uuid` values generated **in the database** by PostgreSQL 18's native `uuidv7()`.
+
+- **UUIDs rather than sequential integers:** ids don't reveal how many users exist or in what order they joined. They can be generated anywhere (for example by the voice gateway, later) without coordination, and they are safe to expose in URLs and logs.
+- **Version 7 rather than random v4:** v7 UUIDs start with a timestamp, so new rows are appended to the end of the primary-key B-tree instead of scattered across it. That keeps index pages dense and inserts fast as tables grow, while the ids stay unguessable enough for identifiers. They are not secrets and must not be used as access tokens.
+- **Database default rather than application-generated:** every writer (Prisma, raw SQL, `psql`, future services) gets the same behaviour.
+
+## Money
+
+**Decision:** money is stored as `NUMERIC(14,2)` together with an ISO 4217 `currency` column, and handled in TypeScript as `Prisma.Decimal` (decimal.js). Floating-point types (`real`, `double precision`, JS `number` arithmetic) are never used for money.
+
+- **Why `NUMERIC`:** it is exact decimal arithmetic. `0.1 + 0.2` is exactly `0.3`, which binary floating point cannot represent. Future calculations such as budgets, interest and repayment schedules can be done exactly in SQL or with `Decimal` in TypeScript.
+- **Why scale 2:** the Sri Lankan rupee (LKR, the default and expected currency) has 2 minor units (cents). All stored values are whole cents.
+- **Why precision 14:** this allows up to 999,999,999,999.99, about one trillion. That is far beyond any individual's income, expenses or goal, while keeping values bounded. Larger values are rejected with a numeric overflow error (Prisma `P2020`).
+- **Why not integer minor units (`BIGINT` cents):** that is also exact, but every read and write needs manual scaling, JSON has no 64-bit integer, and interest or percentage calculations still need decimal arithmetic. `NUMERIC` keeps the stored value, the API value and the spoken value identical.
+- **Rounding:** PostgreSQL silently rounds values with more than 2 decimal places to the column's scale (half away from zero). The database cannot detect this, so the API rejects amounts with more than 2 decimal places before writing them (see [domain-api.md](../api/domain-api.md#money)).
+- **Sign rules** are enforced by CHECK constraints (see below). They also reject `NaN`: PostgreSQL `NUMERIC` accepts `'NaN'` and orders it above every number, so `>= 0` alone would let it through.
+- **Other currencies:** the column is ready for them, but scale 2 matches LKR and most currencies. Supporting a currency with a different number of minor units (for example 3 or 0) would need a deliberate migration and a per-currency validation rule.
+- **In API payloads**, amounts are decimal **strings** (`"150000.00"`), never JSON numbers.
+
+## Enumerations
+
+Enumerations are native PostgreSQL enum types, with the same names in TypeScript:
+
+| PostgreSQL type         | Values                                                 |
+| ----------------------- | ------------------------------------------------------ |
+| `language`              | `SI` (Sinhala), `TA` (Tamil), `EN` (English)           |
+| `user_status`           | `ACTIVE`, `INACTIVE`                                   |
+| `user_role`             | `USER`, `ADMIN`                                        |
+| `financial_goal_type`   | `SAVINGS`, `EMERGENCY_FUND`, `DEBT_REPAYMENT`, `OTHER` |
+| `financial_goal_status` | `ACTIVE`, `COMPLETED`, `CANCELLED`                     |
+
+Adding a value is a cheap, non-blocking migration (`ALTER TYPE … ADD VALUE`). Removing or renaming one needs a data migration, so new values should be added only when they are really needed. The language codes are FinVoice's own uppercase codes, which map to ISO 639-1 `si`, `ta` and `en`.
+
+## Constraints
+
+Prisma's schema language cannot express CHECK constraints, so they are written by hand at the end of the migration SQL and listed in comments in `schema.prisma`. The integration tests assert that every one of them exists.
+
+| Constraint                                               | Rule                              |
+| -------------------------------------------------------- | --------------------------------- |
+| `users_phone_number_e164_check`                          | E.164 format                      |
+| `users_display_name_not_blank_check`                     | `NULL` or not blank               |
+| `users_timezone_not_blank_check`                         | not blank                         |
+| `financial_profiles_currency_iso4217_check`              | three uppercase letters           |
+| `financial_profiles_monthly_income_non_negative_check`   | `NULL` or `>= 0` (not NaN)        |
+| `financial_profiles_monthly_expenses_non_negative_check` | `NULL` or `>= 0` (not NaN)        |
+| `financial_goals_name_not_blank_check`                   | not blank                         |
+| `financial_goals_currency_iso4217_check`                 | three uppercase letters           |
+| `financial_goals_target_amount_positive_check`           | `> 0` (not NaN)                   |
+| `financial_goals_current_amount_non_negative_check`      | `>= 0` (not NaN)                  |
+| `financial_goals_current_amount_within_target_check`     | `current_amount <= target_amount` |
+
+The authentication tables' constraints are listed [with the tables](#authentication-tables).
+
+The database is the last line of defence, not the only one. The domain API validates the same rules first, so clients get clear validation errors instead of constraint violations.
+
+### `analytics_events`
+
+Privacy-safe operational analytics (Step 10). Design: [analytics.md](analytics.md).
+
+- **Purpose:** one row per operational occurrence, such as an agent request, a voice session, a calculation, a ScamShield analysis, a knowledge search or a literacy topic started. It feeds the aggregate, internal admin dashboard.
+- **Typed columns only:** every column is an enum, boolean, bounded integer or UUID. CHECK constraints ensure each optional field appears only on the event types it belongs to (ScamShield fields, tool names, categories, the voice session id), an error code only on a failure, and durations from 0 to 24 hours.
+- **No `user_id`:** analytics are aggregate operational data, so no row can be linked to a person or used to build a profile. A user-level audit trail would be a separate design with its own review.
+- **No JSON `metadata` column:** an unrestricted JSON field would make it easy to store messages, transcripts, amounts, credentials, ScamShield content or tool arguments by accident. Explicit typed columns make that impossible.
+- **Retention:** rows are deleted after `ANALYTICS_RETENTION_DAYS` (default 90) by `pnpm analytics:cleanup`, which touches only this table. Nothing is deleted at startup.
+- **Timestamps:** `occurred_at` is set by the API in UTC. Dashboard days are grouped in Asia/Colombo.
+
+);
+
+- `_max_attempts_range_check`, `_attempts_range_check`;
+- `_expires_after_created_check`;
+- `_single_outcome_check` (never both consumed and superseded).
+
+### `auth_sessions`
+
+One row per refresh token.
+
+| Column                   | Type             | Rules                                                        |
+| ------------------------ | ---------------- | ------------------------------------------------------------ |
+| `id`                     | `uuid`           | PK, default `uuidv7()`; the access token's `sid` claim       |
+| `user_id`                | `uuid`           | NOT NULL, FK → `users.id` (cascade)                          |
+| `refresh_token_hash`     | `char(64)`       | NOT NULL, UNIQUE, lowercase hex SHA-256 of the refresh token |
+| `token_family_id`        | `uuid`           | NOT NULL: all sessions of one sign-in's rotation chain       |
+| `expires_at`             | `timestamptz(3)` | NOT NULL, after `created_at`                                 |
+| `revoked_at`             | `timestamptz(3)` | nullable: rotation, logout, reuse detection, deactivation    |
+| `last_used_at`           | `timestamptz(3)` | nullable: when the token was presented for rotation          |
+| `replaced_by_session_id` | `uuid`           | nullable: the successor; only on a revoked row               |
+| `created_at`             | `timestamptz(3)` | NOT NULL                                                     |
+
+- **Constraints:** `auth_sessions_refresh_token_hash_format_check`, `_expires_after_created_check` and `_replaced_is_revoked_check`.
+- **No self-referencing foreign key on `replaced_by_session_id`:** it is an audit link. Cleanup deletes whole expired chains, so it must never be blocked by it.
+- **What is not stored:** the refresh token itself, IP addresses and user agents.
+
+### Retention and cleanup
+
+`pnpm auth:cleanup` (`node dist/auth/auth-cleanup.cli.js` in a built deployment) is run by an operator or scheduler, never at startup. It prints counts only.
+
+| Data                           | Deleted when                   | Why kept until then                                                                                            |
+| ------------------------------ | ------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| OTP challenges                 | `expires_at` older than 1 day  | Covers the longest rate-limit window (24 h)                                                                    |
+| Auth sessions (revoked or not) | `expires_at` older than 7 days | A revoked, unexpired row is what detects reuse of a stolen refresh token; unexpired sessions are never deleted |
 
 ## Indexing strategy
 
@@ -168,6 +395,13 @@ Every index has a named query behind it. Indexes are not added speculatively: ea
 | `financial_literacy_topic_progress_user_id_topic_key` (unique) | `user_id, topic`               | Load one topic's progress; enforces one row per user and topic; its leading column also serves **all progress of a user** and the FK, so there is no separate `user_id` index |
 | `analytics_events_occurred_at_idx`                             | `occurred_at`                  | **Every dashboard query over a date range across all event types** (overview, languages, health) and the **retention cleanup** (`occurred_at < cutoff`)                       |
 | `analytics_events_event_type_occurred_at_idx`                  | `event_type, occurred_at`      | **One feature over a date range**: trends and the ScamShield, knowledge, literacy and tool sections                                                                           |
+| `otp_challenges_pkey`                                          | `id`                           | Verify a challenge (one conditional update by id)                                                                                                                             |
+| `otp_challenges_phone_number_created_at_idx`                   | `phone_number, created_at`     | **Rate limit** (a number's challenges in the window) and **superseding** a number's active challenges                                                                         |
+| `otp_challenges_expires_at_idx`                                | `expires_at`                   | Cleanup of expired challenges                                                                                                                                                 |
+| `auth_sessions_refresh_token_hash_key` (unique)                | `refresh_token_hash`           | **Look up a refresh token** on refresh; enforces uniqueness                                                                                                                   |
+| `auth_sessions_user_id_idx`                                    | `user_id`                      | A user's sessions; the FK for cascading deletes                                                                                                                               |
+| `auth_sessions_token_family_id_idx`                            | `token_family_id`              | **Revoke a whole token family** on logout or reuse                                                                                                                            |
+| `auth_sessions_expires_at_idx`                                 | `expires_at`                   | Cleanup of expired sessions                                                                                                                                                   |
 
 The requirement for indexes on `financial_goals.user_id`, `status` and `target_date` is met by these two composite indexes rather than three single-column ones:
 
@@ -207,3 +441,4 @@ Tools that make the database match the model at startup (`synchronize: true`, `p
 - **Deterministic:** fixed ids and upserts. Running it again restores the same records and leaves other data alone.
 - **Local only:** it refuses to run when `NODE_ENV=production` or when `DATABASE_URL` does not point at `localhost`, `127.0.0.1` or `::1`.
 - **Never automatic:** no migration or deployment command runs it.
+- **No administrator:** all demo users have role `USER`. The seed never creates or promotes an `ADMIN`.

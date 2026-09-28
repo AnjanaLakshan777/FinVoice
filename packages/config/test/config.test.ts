@@ -4,6 +4,8 @@ import {
   ConfigValidationError,
   DEFAULT_GEMINI_LIVE_MODEL,
   DEFAULT_GEMINI_LIVE_VOICE,
+  DEV_OTP_PROVIDER_ENVIRONMENTS,
+  isDevOtpProviderEnvironment,
   loadAdminDashboardConfig,
   loadApiConfig,
   loadDatabaseConfig,
@@ -12,6 +14,9 @@ import {
 
 // Fake credentials for tests only.
 const DATABASE_URL = "postgresql://finvoice:not-a-real-secret@localhost:5432/finvoice";
+
+const JWT_SECRET = "j".repeat(43);
+const OTP_PEPPER = "p".repeat(43);
 
 describe("loadApiConfig", () => {
   it("applies local development defaults", () => {
@@ -23,6 +28,22 @@ describe("loadApiConfig", () => {
       gemini: { apiKey: null, model: "gemini-3.8-flash" },
       internal: { token: null },
       analytics: { retentionDays: 90 },
+      auth: {
+        enabled: false,
+        jwtSecret: null,
+        otpPepper: null,
+        accessTokenTtlSeconds: 900,
+        refreshTokenTtlDays: 30,
+        otp: {
+          ttlSeconds: 300,
+          maxAttempts: 5,
+          requestLimit: 3,
+          requestWindowSeconds: 900,
+          provider: null,
+          devCode: null,
+        },
+        refreshCookie: { name: "finvoice_refresh", secure: false },
+      },
     });
   });
 
@@ -33,6 +54,8 @@ describe("loadApiConfig", () => {
         API_HOST: "0.0.0.0",
         API_PORT: "8080",
         DATABASE_URL,
+        AUTH_JWT_SECRET: JWT_SECRET,
+        AUTH_OTP_PEPPER: OTP_PEPPER,
       }),
     ).toEqual({
       nodeEnv: "production",
@@ -42,6 +65,22 @@ describe("loadApiConfig", () => {
       gemini: { apiKey: null, model: "gemini-3.8-flash" },
       internal: { token: null },
       analytics: { retentionDays: 90 },
+      auth: {
+        enabled: true,
+        jwtSecret: JWT_SECRET,
+        otpPepper: OTP_PEPPER,
+        accessTokenTtlSeconds: 900,
+        refreshTokenTtlDays: 30,
+        otp: {
+          ttlSeconds: 300,
+          maxAttempts: 5,
+          requestLimit: 3,
+          requestWindowSeconds: 900,
+          provider: null,
+          devCode: null,
+        },
+        refreshCookie: { name: "finvoice_refresh", secure: true },
+      },
     });
   });
 
@@ -269,5 +308,201 @@ describe("loadAdminDashboardConfig", () => {
     } catch (error) {
       expect(String(error)).not.toContain(short);
     }
+  });
+});
+
+describe("authentication configuration", () => {
+  const DATABASE_URL = "postgresql://user:secret@localhost:5432/finvoice";
+  const PRODUCTION = {
+    NODE_ENV: "production",
+    DATABASE_URL,
+    AUTH_JWT_SECRET: JWT_SECRET,
+    AUTH_OTP_PEPPER: OTP_PEPPER,
+  };
+
+  function problems(env: Record<string, string>): string {
+    try {
+      loadApiConfig(env);
+      return "";
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      return String(error);
+    }
+  }
+
+  it("enables authentication only when both secrets are set", () => {
+    expect(loadApiConfig({ DATABASE_URL, AUTH_JWT_SECRET: JWT_SECRET }).auth.enabled).toBe(false);
+    expect(
+      loadApiConfig({ DATABASE_URL, AUTH_JWT_SECRET: JWT_SECRET, AUTH_OTP_PEPPER: OTP_PEPPER }).auth
+        .enabled,
+    ).toBe(true);
+  });
+
+  it("requires both secrets in production", () => {
+    const message = problems({ NODE_ENV: "production", DATABASE_URL });
+    expect(message).toContain("AUTH_JWT_SECRET");
+    expect(message).toContain("AUTH_OTP_PEPPER");
+  });
+
+  it("rejects the development OTP provider, a development code and an insecure cookie in production", () => {
+    const devInProduction = problems({
+      ...PRODUCTION,
+      AUTH_OTP_PROVIDER: "dev",
+      AUTH_OTP_DEV_CODE: "12345678",
+    });
+    expect(devInProduction).toContain("AUTH_OTP_PROVIDER");
+    expect(devInProduction).toContain("AUTH_OTP_DEV_CODE");
+    expect(devInProduction).not.toContain("12345678");
+    expect(problems({ ...PRODUCTION, AUTH_REFRESH_COOKIE_SECURE: "false" })).toContain(
+      "AUTH_REFRESH_COOKIE_SECURE",
+    );
+    expect(loadApiConfig(PRODUCTION).auth.refreshCookie.secure).toBe(true);
+    // Empty means "not set": the environment's default.
+    expect(
+      loadApiConfig({ ...PRODUCTION, AUTH_REFRESH_COOKIE_SECURE: "" }).auth.refreshCookie.secure,
+    ).toBe(true);
+    expect(
+      loadApiConfig({ DATABASE_URL, AUTH_REFRESH_COOKIE_SECURE: "" }).auth.refreshCookie.secure,
+    ).toBe(false);
+    expect(
+      loadApiConfig({ DATABASE_URL, AUTH_REFRESH_COOKIE_SECURE: "true" }).auth.refreshCookie.secure,
+    ).toBe(true);
+    expect(problems({ DATABASE_URL, AUTH_REFRESH_COOKIE_SECURE: "yes" })).toContain(
+      "AUTH_REFRESH_COOKIE_SECURE",
+    );
+  });
+
+  it("accepts the development provider in development, with its 8-digit code", () => {
+    const DEVELOPMENT = { NODE_ENV: "development", DATABASE_URL };
+    const config = loadApiConfig({
+      ...DEVELOPMENT,
+      AUTH_OTP_PROVIDER: "dev",
+      AUTH_OTP_DEV_CODE: "24681357",
+    });
+    expect(config.auth.otp).toMatchObject({ provider: "dev", devCode: "24681357" });
+    expect(problems({ ...DEVELOPMENT, AUTH_OTP_PROVIDER: "dev" })).toContain("AUTH_OTP_DEV_CODE");
+    expect(problems({ ...DEVELOPMENT, AUTH_OTP_PROVIDER: "sms" })).toContain("AUTH_OTP_PROVIDER");
+    for (const code of ["1234567", "123456789", "1234abcd"]) {
+      expect(
+        problems({ ...DEVELOPMENT, AUTH_OTP_PROVIDER: "dev", AUTH_OTP_DEV_CODE: code }),
+      ).toContain("AUTH_OTP_DEV_CODE");
+    }
+  });
+
+  describe("development OTP provider: development and test only", () => {
+    const DEV_CODE = "97531864";
+    const withDevProvider = (nodeEnv: string | undefined) => ({
+      DATABASE_URL,
+      ...(nodeEnv === undefined ? {} : { NODE_ENV: nodeEnv }),
+      AUTH_JWT_SECRET: JWT_SECRET,
+      AUTH_OTP_PEPPER: OTP_PEPPER,
+      AUTH_OTP_PROVIDER: "dev",
+      AUTH_OTP_DEV_CODE: DEV_CODE,
+    });
+
+    it.each(["development", "test"])("allows it with NODE_ENV=%s", (nodeEnv) => {
+      const config = loadApiConfig(withDevProvider(nodeEnv));
+
+      expect(config.nodeEnv).toBe(nodeEnv);
+      expect(config.auth.otp).toMatchObject({ provider: "dev", devCode: DEV_CODE });
+    });
+
+    it.each([
+      ["production", "production"],
+      ["staging", "staging"],
+      ["preview", "preview"],
+      ["an unknown environment", "qa"],
+      ["a differently cased value", "Development"],
+      ["a padded value", " development"],
+      ["a prefix of an allowed value", "dev"],
+      ["an empty value", ""],
+      ["an unset NODE_ENV (never defaulted into development)", undefined],
+    ])("rejects it for %s, without printing any secret", (_case, nodeEnv) => {
+      const message = problems(withDevProvider(nodeEnv));
+
+      expect(message).toContain("AUTH_OTP_PROVIDER");
+      expect(message).toContain("Allowed only when NODE_ENV is explicitly development or test");
+      for (const secret of [DEV_CODE, JWT_SECRET, OTP_PEPPER]) {
+        expect(message).not.toContain(secret);
+      }
+    });
+
+    it.each(["DEV", " dev ", "Dev"])(
+      "treats the spelling %j of the provider as the development provider",
+      (provider) => {
+        expect(problems({ ...withDevProvider("staging"), AUTH_OTP_PROVIDER: provider })).toContain(
+          "AUTH_OTP_PROVIDER",
+        );
+      },
+    );
+
+    it("rejects a development code on its own outside development and test", () => {
+      const message = problems({
+        NODE_ENV: "production",
+        DATABASE_URL,
+        AUTH_JWT_SECRET: JWT_SECRET,
+        AUTH_OTP_PEPPER: OTP_PEPPER,
+        AUTH_OTP_DEV_CODE: DEV_CODE,
+      });
+
+      expect(message).toContain("AUTH_OTP_DEV_CODE");
+      expect(message).not.toContain(DEV_CODE);
+    });
+
+    it("leaves every environment usable without the development provider", () => {
+      expect(loadApiConfig({ DATABASE_URL }).auth.otp.provider).toBeNull();
+      expect(
+        loadApiConfig({
+          NODE_ENV: "production",
+          DATABASE_URL,
+          AUTH_JWT_SECRET: JWT_SECRET,
+          AUTH_OTP_PEPPER: OTP_PEPPER,
+          AUTH_OTP_PROVIDER: "",
+        }).auth.otp.provider,
+      ).toBeNull();
+    });
+
+    it("exposes the allowlist as exactly development and test", () => {
+      expect(DEV_OTP_PROVIDER_ENVIRONMENTS).toEqual(["development", "test"]);
+      for (const value of ["development", "test"]) {
+        expect(isDevOtpProviderEnvironment(value)).toBe(true);
+      }
+      for (const value of ["production", "staging", "preview", "", undefined, null, "TEST"]) {
+        expect(isDevOtpProviderEnvironment(value)).toBe(false);
+      }
+    });
+  });
+
+  it("rejects short secrets without echoing them", () => {
+    const weak = "short-but-secret-value";
+    const message = problems({ DATABASE_URL, AUTH_JWT_SECRET: weak, AUTH_OTP_PEPPER: weak + "x" });
+    expect(message).toContain("AUTH_JWT_SECRET");
+    expect(message).toContain("AUTH_OTP_PEPPER");
+    expect(message).not.toContain(weak);
+  });
+
+  it("keeps the JWT secret, the OTP pepper and the internal token different", () => {
+    expect(
+      problems({ DATABASE_URL, AUTH_JWT_SECRET: JWT_SECRET, AUTH_OTP_PEPPER: JWT_SECRET }),
+    ).toContain("AUTH_OTP_PEPPER");
+    expect(
+      problems({ DATABASE_URL, AUTH_JWT_SECRET: JWT_SECRET, INTERNAL_API_TOKEN: JWT_SECRET }),
+    ).toContain("INTERNAL_API_TOKEN");
+    expect(
+      problems({ DATABASE_URL, AUTH_JWT_SECRET: JWT_SECRET, INTERNAL_API_TOKEN: JWT_SECRET }),
+    ).not.toContain(JWT_SECRET);
+  });
+
+  it.each([
+    ["AUTH_ACCESS_TOKEN_TTL_SECONDS", "-1"],
+    ["AUTH_ACCESS_TOKEN_TTL_SECONDS", "0"],
+    ["AUTH_REFRESH_TOKEN_TTL_DAYS", "0"],
+    ["AUTH_OTP_TTL_SECONDS", "10"],
+    ["AUTH_OTP_MAX_ATTEMPTS", "0"],
+    ["AUTH_OTP_REQUEST_LIMIT", "0"],
+    ["AUTH_OTP_REQUEST_WINDOW_SECONDS", "abc"],
+    ["AUTH_REFRESH_COOKIE_NAME", "bad name;"],
+  ])("rejects %s=%s", (name, value) => {
+    expect(problems({ DATABASE_URL, [name]: value })).toContain(name);
   });
 });

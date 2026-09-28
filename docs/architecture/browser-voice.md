@@ -1,6 +1,6 @@
 # Browser voice
 
-> **Status:** Step 7. A **local/development** real-time voice experience: a user talks to FinVoice from the browser in Sinhala, Tamil or English, and FinVoice answers with generated speech. There is no authentication yet (see [§18](#18-security)); do not expose the voice gateway publicly with this setup.
+> **Status:** Step 7. A **local/development** real-time voice experience: a user talks to FinVoice from the browser in Sinhala, Tamil or English, and FinVoice answers with generated speech. The voice gateway does not authenticate users (Step 11 added API sign-in, but voice is deliberately not connected to it yet; see [§18](#18-security)); do not expose the voice gateway publicly with this setup.
 
 ## 1. Browser voice architecture
 

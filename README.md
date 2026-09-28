@@ -4,22 +4,23 @@ FinVoice is a voice-first financial inclusion and financial literacy platform fo
 
 ## Current status
 
-**Step 10: admin dashboard and analytics.** This repository has:
+**Step 11: authentication and authorisation.** This repository has:
 
 - a pnpm monorepo with strict TypeScript, ESLint, Prettier, Vitest and CI;
 - a **web app** (Next.js) with a `/voice` page for real-time voice conversations;
 - a **backend API** (NestJS) with a validated REST API for users, financial profiles and financial goals under `/api/v1`, plus liveness (`GET /health`) and database readiness (`GET /health/ready`) checks;
+- passwordless **authentication** (phone number and one-time code, `/api/v1/auth`). It issues short-lived JWT access tokens and rotating refresh sessions in an HttpOnly cookie. Authorisation covers roles (`USER`, `ADMIN`) and owner checks on all personal data, and there is an authenticated `/api/v1/me` API. **No real SMS provider yet**: sign-in works locally with a development code provider only;
 - a framework-independent **financial calculation engine** (loan repayment, savings plan, budget summary) with exact decimal arithmetic, exposed under `/api/v1/calculations`;
 - a curated, source-backed **financial knowledge base** (12 articles based on Central Bank of Sri Lanka material, in English with some Sinhala and Tamil) with read-only retrieval under `/api/v1/knowledge`;
 - a text **AI agent** (Google Gemini, Interactions API) under `/api/v1/agent/chat` that answers from the knowledge base and calculates with the finance engine through validated, allowlisted tools;
 - a personal **financial context and financial-literacy** layer for trusted services, behind a token-protected internal API;
 - **ScamShield** under `/api/v1/scamshield/analyze`: a deterministic, source-grounded check of a message, call or offer for scam warning indicators (English, with partial Sinhala and Tamil coverage). It uses no AI, never stores the submitted content or an analysis history (only a typed, content-free analytics event), and never says content is safe;
 - privacy-safe **operational analytics** (usage, languages, latency, errors; no content, no user ids) with a temporary, **disabled-by-default** admin dashboard at `/admin`, reachable only through internal, token-protected endpoints;
-- a **PostgreSQL 18** schema managed by **Prisma migrations**: users, financial profiles and goals, and knowledge sources, articles and translations;
+- a **PostgreSQL 18** schema managed by **Prisma migrations**: users (with roles), financial profiles and goals, knowledge sources, articles and translations, and OTP challenges and refresh sessions;
 - a **voice gateway** service (Node.js) that bridges the browser (WebSocket) and **Gemini Live** (native audio), with transcription, barge-in, session resumption and FinVoice tools run through the API, plus `GET /health`;
 - shared `shared`, `contracts`, `config`, `finance-engine` and `scam-shield` packages.
 
-There is no authentication yet (voice is a local/development setup) and no telephony. The target architecture is described in [docs/architecture/system-overview.md](docs/architecture/system-overview.md), the database design in [docs/architecture/database.md](docs/architecture/database.md), the calculation engine in [docs/architecture/financial-calculation-engine.md](docs/architecture/financial-calculation-engine.md), the knowledge base in [docs/architecture/financial-knowledge-base.md](docs/architecture/financial-knowledge-base.md), the AI agent in [docs/architecture/ai-agent.md](docs/architecture/ai-agent.md), browser voice in [docs/architecture/browser-voice.md](docs/architecture/browser-voice.md), ScamShield in [docs/architecture/scam-shield.md](docs/architecture/scam-shield.md) and the API in [docs/api/domain-api.md](docs/api/domain-api.md).
+Voice and the AI agent are not personalised and not tied to a signed-in user yet (voice is a local/development setup), the web app has no sign-in yet, and there is no telephony. The target architecture is described in [docs/architecture/system-overview.md](docs/architecture/system-overview.md), the database design in [docs/architecture/database.md](docs/architecture/database.md), the calculation engine in [docs/architecture/financial-calculation-engine.md](docs/architecture/financial-calculation-engine.md), the knowledge base in [docs/architecture/financial-knowledge-base.md](docs/architecture/financial-knowledge-base.md), the AI agent in [docs/architecture/ai-agent.md](docs/architecture/ai-agent.md), browser voice in [docs/architecture/browser-voice.md](docs/architecture/browser-voice.md), authentication in [docs/architecture/authentication-authorization.md](docs/architecture/authentication-authorization.md), ScamShield in [docs/architecture/scam-shield.md](docs/architecture/scam-shield.md) and the API in [docs/api/domain-api.md](docs/api/domain-api.md).
 
 ## Repository structure
 
@@ -113,20 +114,33 @@ To confirm the API can reach PostgreSQL, open http://127.0.0.1:4000/health/ready
 
 ### Trying the API
 
-With `pnpm dev:api` running and migrations applied, the domain API is at `http://127.0.0.1:4000/api/v1`. For example, in PowerShell:
+With `pnpm dev:api` running and migrations applied, the domain API is at `http://127.0.0.1:4000/api/v1`.
+
+Personal data needs a signed-in user. For local sign-in, add these to your own root `.env` (never committed), then restart the API:
+
+- `AUTH_JWT_SECRET` and `AUTH_OTP_PEPPER`: two **different** random secrets, generated with `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`;
+- `AUTH_OTP_PROVIDER=dev`;
+- `AUTH_OTP_DEV_CODE`: an 8-digit code of your choice.
+
+The development provider sends no SMS: every sign-in code is your `AUTH_OTP_DEV_CODE`. It works **only** with `NODE_ENV` set to exactly `development` or `test` (as in `.env.example`), and never in staging, preview or production, where a real SMS provider is required. Without the secrets, sign-in and personal routes answer `503` and everything else works. For example, in PowerShell (with the code in `$env:AUTH_OTP_DEV_CODE`):
 
 ```powershell
 $api = "http://127.0.0.1:4000/api/v1"
-$user = Invoke-RestMethod -Method Post "$api/users" -ContentType "application/json" `
-  -Body '{"phoneNumber":"+94000000901","preferredLanguage":"SI","displayName":"Demo"}'
-Invoke-RestMethod -Method Put "$api/users/$($user.id)/financial-profile" -ContentType "application/json" `
+$challenge = Invoke-RestMethod -Method Post "$api/auth/request-otp" -ContentType "application/json" `
+  -Body '{"phoneNumber":"+94000000901"}'
+$verify = @{ challengeId = $challenge.challengeId; code = $env:AUTH_OTP_DEV_CODE; preferredLanguage = "SI" } | ConvertTo-Json
+$signIn = Invoke-RestMethod -Method Post "$api/auth/verify-otp" -ContentType "application/json" -Body $verify
+$auth = @{ Authorization = "Bearer $($signIn.accessToken)" }
+Invoke-RestMethod -Method Put "$api/me/financial-profile" -Headers $auth -ContentType "application/json" `
   -Body '{"monthlyIncome":"150000.00","monthlyExpenses":"100000.00"}'
-Invoke-RestMethod -Method Post "$api/users/$($user.id)/goals" -ContentType "application/json" `
+Invoke-RestMethod -Method Post "$api/me/goals" -Headers $auth -ContentType "application/json" `
   -Body '{"type":"EMERGENCY_FUND","name":"Emergency Fund","targetAmount":"300000.00","targetDate":"2027-06-30"}'
-Invoke-RestMethod "$api/users/$($user.id)/goals?status=ACTIVE"
+Invoke-RestMethod "$api/me/financial-context" -Headers $auth
 ```
 
-Calculations need no stored data:
+The access token lasts 15 minutes. The refresh token is an HttpOnly cookie for `POST /api/v1/auth/refresh` (see [docs/api/domain-api.md](docs/api/domain-api.md#authentication)).
+
+Calculations need no stored data or sign-in:
 
 ```powershell
 Invoke-RestMethod -Method Post "$api/calculations/loan" -ContentType "application/json" `
@@ -153,7 +167,7 @@ The result lists warning indicators, not a verdict. It never says content is saf
 
 ### Admin dashboard (local development only)
 
-A temporary, aggregate-only analytics dashboard at http://localhost:3000/admin. There is **no authentication yet**, so it is **disabled by default** (a 404) and must only be enabled on your own machine or a trusted internal network. It shows counts, languages, latency, errors and the knowledge review queue, never messages, transcripts, amounts or personal details. See [docs/architecture/analytics.md](docs/architecture/analytics.md).
+A temporary, aggregate-only analytics dashboard at http://localhost:3000/admin. The web app does not sign users in yet, so the dashboard has no login: it is **disabled by default** (a 404) and must only be enabled on your own machine or a trusted internal network. It shows counts, languages, latency, errors and the knowledge review queue, never messages, transcripts, amounts or personal details. See [docs/architecture/analytics.md](docs/architecture/analytics.md).
 
 1. Make sure your root `.env` has `INTERNAL_API_TOKEN` (see "Talking to FinVoice" below) and apply the migrations (`pnpm db:migrate`).
 2. Start the API: `pnpm dev:api`.
@@ -210,6 +224,7 @@ The schema lives in [apps/api/prisma/schema.prisma](apps/api/prisma/schema.prism
 | Create a migration after editing the schema | `pnpm db:migrate:create --name <change>`  |
 | Load the curated knowledge base             | `pnpm db:seed:knowledge`                  |
 | Delete analytics older than the retention   | `pnpm analytics:cleanup`                  |
+| Delete expired OTP codes and auth sessions  | `pnpm auth:cleanup`                       |
 | Load the fake development seed data         | `pnpm db:seed`                            |
 | Regenerate the Prisma client                | `pnpm --filter @finvoice/api db:generate` |
 

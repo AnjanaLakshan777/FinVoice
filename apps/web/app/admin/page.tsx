@@ -32,7 +32,8 @@ import {
 /**
  * The temporary FinVoice admin dashboard: aggregate, operational analytics only.
  *
- * SECURITY: there is no authentication yet, so the page is DISABLED unless the server has
+ * SECURITY: the web app does not sign users in yet (API authentication exists, but is not
+ * connected to this page), so the page is DISABLED unless the server has
  * ADMIN_DASHBOARD_ENABLED=true (otherwise it is a plain 404), and it is meant for local
  * development and trusted internal networks only. Everything is rendered on the server: the page
  * has no client components, the server calls the API's internal endpoints with INTERNAL_API_TOKEN

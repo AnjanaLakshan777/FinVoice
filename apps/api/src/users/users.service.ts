@@ -34,15 +34,17 @@ export class UsersService {
     return toUserResponse(user);
   }
 
+  /**
+   * Self-service changes only: display name and language. The phone number (the login identity),
+   * the role and the status are not changeable through the API.
+   */
   async update(userId: string, command: UpdateUserCommand): Promise<UserResponse> {
     try {
       const user = await this.prisma.user.update({
         where: { id: userId },
         data: omitUndefined({
-          phoneNumber: command.phoneNumber,
           preferredLanguage: command.preferredLanguage,
           displayName: command.displayName,
-          status: command.status,
         }),
       });
       return toUserResponse(user);
@@ -50,7 +52,7 @@ export class UsersService {
       if (isPrismaError(error, "P2025")) {
         throw userNotFound();
       }
-      throw mapPhoneNumberConflict(error);
+      throw error;
     }
   }
 
@@ -68,7 +70,7 @@ export function userNotFound(): ApiException {
 }
 
 function mapPhoneNumberConflict(error: unknown): unknown {
-  // phone_number is the only unique column a client can set on users.
+  // phone_number is the only unique column an (admin) client can set on users.
   if (isPrismaError(error, "P2002")) {
     return ApiException.conflict("A user with this phone number already exists", [
       { field: "phoneNumber", message: "Already registered to another user" },

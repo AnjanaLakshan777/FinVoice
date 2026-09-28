@@ -255,11 +255,11 @@ Browser ──▶ Next.js server (server components) ──INTERNAL_API_TOKEN─
 
 ## 19. Why there is no admin authentication yet
 
-Authentication and authorisation do not exist yet in FinVoice (they are a later step), and inventing a password or token login for the dashboard would be a weak, temporary access control. Until then:
+Step 11 added API authentication (phone OTP, `USER`/`ADMIN` roles), but the web app does not sign users in yet. Inventing a separate password or token login for the dashboard would be a weak, temporary access control. Until the web sign-in step connects authenticated `ADMIN` users to the dashboard:
 
-- The internal API is protected by the service token, which only servers hold.
+- The internal API is protected by the service token, which only servers hold. The token identifies a FinVoice server, **not a human administrator**, and must never reach a browser.
 - The dashboard is disabled by default and meant only for **local development or a trusted internal network**.
-- **When enabled, the dashboard itself has no login.** Anyone who can reach the web server's `/admin` can see the aggregates. It is **not production-safe** until authentication exists.
+- **When enabled, the dashboard itself has no login.** Anyone who can reach the web server's `/admin` can see the aggregates. It is **not production-safe** until the dashboard uses authenticated `ADMIN` authorisation ([authentication-authorization.md](authentication-authorization.md#25-admin-authorisation)).
 
 ## 20. Future authentication integration
 

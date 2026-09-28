@@ -6,8 +6,9 @@ const issued = new WeakSet<TrustedUserContext>();
  * authenticated session (a later step). User-context tools only accept this, never a user id.
  *
  * NEVER create one from request input: a request body, a query or path parameter, a chat message,
- * a tool argument or a voice protocol message. Until authentication exists, no request path
- * creates one, so no public agent or browser can reach personal data.
+ * a tool argument or a voice protocol message. No request path creates one yet (the agent and
+ * voice are not personalised), so no public agent or browser can reach personal data. A future
+ * authenticated agent will create it only from the verified access token (@CurrentUser()).
  */
 export class TrustedUserContext {
   private constructor(readonly userId: string) {

@@ -7,6 +7,7 @@ import { AppModule } from "../src/app.module.js";
 import { configureApp } from "../src/app.setup.js";
 import { API_CONFIG } from "../src/config/api-config.module.js";
 import { PrismaService } from "../src/database/prisma.service.js";
+import { disabledAuthConfig } from "./support/auth.js";
 
 const TEST_CONFIG: ApiConfig = {
   nodeEnv: "test",
@@ -16,6 +17,7 @@ const TEST_CONFIG: ApiConfig = {
   gemini: { apiKey: null, model: "gemini-test-model" },
   analytics: { retentionDays: 90 },
   internal: { token: null },
+  auth: disabledAuthConfig(),
 };
 
 describe("health endpoints", () => {

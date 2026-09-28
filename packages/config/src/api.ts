@@ -1,7 +1,15 @@
 import { z } from "zod";
 
+import {
+  authEnvShape,
+  checkAuthEnv,
+  devOtpProviderEnvIssues,
+  toAuthConfig,
+  type AuthConfig,
+} from "./auth.js";
 import { databaseEnvSchema } from "./database.js";
 import {
+  ConfigValidationError,
   geminiModelSchema,
   hostSchema,
   internalApiTokenSchema,
@@ -20,31 +28,34 @@ export const DEFAULT_ANALYTICS_RETENTION_DAYS = 90;
 /** Upper bound for ANALYTICS_RETENTION_DAYS (about 10 years): retention is never unbounded. */
 export const MAX_ANALYTICS_RETENTION_DAYS = 3650;
 
-const apiEnvSchema = databaseEnvSchema.extend({
-  API_HOST: hostSchema.default("127.0.0.1"),
-  API_PORT: portSchema.default(4000),
-  /**
-   * Optional so the API can start without it (for example in local development and tests); the
-   * AI agent then answers 503. Empty means "not set". Never logged or echoed in errors.
-   */
-  GEMINI_API_KEY: optionalSecretSchema,
-  GEMINI_MODEL: geminiModelSchema.default(DEFAULT_GEMINI_MODEL),
-  /**
-   * Shared secret the voice gateway sends to the internal voice endpoints. Optional: without it
-   * those endpoints answer 503 and the rest of the API is unaffected.
-   */
-  INTERNAL_API_TOKEN: internalApiTokenSchema,
-  /** Days analytics events are kept; `pnpm analytics:cleanup` deletes older ones. */
-  ANALYTICS_RETENTION_DAYS: z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(MAX_ANALYTICS_RETENTION_DAYS)
-    .default(DEFAULT_ANALYTICS_RETENTION_DAYS),
-});
+const apiEnvSchema = databaseEnvSchema
+  .extend({
+    API_HOST: hostSchema.default("127.0.0.1"),
+    API_PORT: portSchema.default(4000),
+    /**
+     * Optional so the API can start without it (for example in local development and tests); the
+     * AI agent then answers 503. Empty means "not set". Never logged or echoed in errors.
+     */
+    GEMINI_API_KEY: optionalSecretSchema,
+    GEMINI_MODEL: geminiModelSchema.default(DEFAULT_GEMINI_MODEL),
+    /**
+     * Shared secret the voice gateway sends to the internal voice endpoints. Optional: without it
+     * those endpoints answer 503 and the rest of the API is unaffected.
+     */
+    INTERNAL_API_TOKEN: internalApiTokenSchema,
+    /** Days analytics events are kept; `pnpm analytics:cleanup` deletes older ones. */
+    ANALYTICS_RETENTION_DAYS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_ANALYTICS_RETENTION_DAYS)
+      .default(DEFAULT_ANALYTICS_RETENTION_DAYS),
+    ...authEnvShape,
+  })
+  .superRefine(checkAuthEnv);
 
 /**
- * Contains credentials (`database.url`, `gemini.apiKey`, `internal.token`): never log or
+ * Contains credentials (`database.url`, `gemini.apiKey`, `internal.token`, `auth`): never log or
  * serialize this object.
  */
 export type ApiConfig = {
@@ -67,9 +78,17 @@ export type ApiConfig = {
     /** Analytics events older than this many days are deleted by the cleanup command. */
     retentionDays: number;
   };
+  /** Contains credentials (`jwtSecret`, `otpPepper`, `otp.devCode`). */
+  auth: AuthConfig;
 };
 
 export function loadApiConfig(env: RawEnv = process.env): ApiConfig {
+  // The development OTP provider is checked on the raw values first, so neither an unset NODE_ENV
+  // (defaulted to "development" by the schema) nor any other value can enable it.
+  const devProviderIssues = devOtpProviderEnvIssues(env);
+  if (devProviderIssues.length > 0) {
+    throw new ConfigValidationError(devProviderIssues.join("\n"));
+  }
   const parsed = parseEnv(apiEnvSchema, env);
   return {
     nodeEnv: parsed.NODE_ENV,
@@ -79,5 +98,6 @@ export function loadApiConfig(env: RawEnv = process.env): ApiConfig {
     gemini: { apiKey: parsed.GEMINI_API_KEY, model: parsed.GEMINI_MODEL },
     internal: { token: parsed.INTERNAL_API_TOKEN },
     analytics: { retentionDays: parsed.ANALYTICS_RETENTION_DAYS },
+    auth: toAuthConfig(parsed),
   };
 }

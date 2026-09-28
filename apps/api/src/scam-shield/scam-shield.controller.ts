@@ -6,6 +6,7 @@ import {
 import { Body, Controller, Header, HttpCode, HttpStatus, Post } from "@nestjs/common";
 
 import { ScamShieldService } from "./scam-shield.service.js";
+import { Public } from "../auth/auth.decorators.js";
 
 /**
  * ScamShield: checks user-supplied content for scam warning indicators. No authentication: it only
@@ -13,6 +14,7 @@ import { ScamShieldService } from "./scam-shield.service.js";
  * because nothing is created or stored. Responses quote parts of the content, so they must not be
  * cached.
  */
+@Public()
 @Controller("scamshield")
 export class ScamShieldController {
   constructor(private readonly scamShield: ScamShieldService) {}

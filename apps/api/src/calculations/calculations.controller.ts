@@ -12,11 +12,13 @@ import {
 import { Body, Controller, HttpCode, HttpStatus, Post } from "@nestjs/common";
 
 import { CalculationsService } from "./calculations.service.js";
+import { Public } from "../auth/auth.decorators.js";
 
 /**
  * Stateless calculations. POST because the inputs are a structured body, but nothing is created
  * or stored, hence 200 rather than 201.
  */
+@Public()
 @Controller("calculations")
 export class CalculationsController {
   constructor(private readonly calculations: CalculationsService) {}

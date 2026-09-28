@@ -14,9 +14,16 @@ import {
 } from "@finvoice/contracts";
 import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 
+import { OwnUserOnly } from "../auth/auth.decorators.js";
 import { FinancialGoalsService } from "./financial-goals.service.js";
 
+/**
+ * The caller's own goals only: another user's id answers 404, and a goal id is always looked up
+ * within the caller's user id, so another user's goal is indistinguishable from a missing one. See
+ * also /me/goals.
+ */
 @Controller("users/:userId/goals")
+@OwnUserOnly()
 export class FinancialGoalsController {
   constructor(private readonly goals: FinancialGoalsService) {}
 

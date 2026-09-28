@@ -41,12 +41,15 @@ export const createUserRequestSchema = z.strictObject({
 export type CreateUserRequest = z.input<typeof createUserRequestSchema>;
 export type CreateUserCommand = z.output<typeof createUserRequestSchema>;
 
+/**
+ * What a signed-in user may change about themselves (PATCH /me, PATCH /users/:userId for their own
+ * id). The phone number is the login identity: changing it needs its own OTP-verified flow (future
+ * work). The role and status are administrative: never user-editable. Those fields are rejected.
+ */
 export const updateUserRequestSchema = z
   .strictObject({
-    phoneNumber: phoneNumberSchema.optional(),
     preferredLanguage: languageSchema.optional(),
     displayName: displayNameSchema.optional(),
-    status: userStatusSchema.optional(),
   })
   .refine((body) => Object.keys(body).length > 0, {
     error: "At least one field must be provided",

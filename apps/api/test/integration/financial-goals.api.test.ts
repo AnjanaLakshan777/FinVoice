@@ -2,7 +2,6 @@ import type {
   ApiErrorResponse,
   FinancialGoalResponse,
   PaginatedResponse,
-  UserResponse,
 } from "@finvoice/contracts";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -25,36 +24,56 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await truncateAllTables(api.prisma);
-  userId = (await createUser("+94000000401")).body.id;
-  otherUserId = (await createUser("+94000000402")).body.id;
+  userId = await createUser("+94000000401");
+  otherUserId = await createUser("+94000000402");
 });
 
-function createUser(phoneNumber: string) {
-  return api.request<UserResponse>("POST", "/api/v1/users", {
-    phoneNumber,
-    preferredLanguage: "SI",
-  });
+async function createUser(phoneNumber: string): Promise<string> {
+  const user = await api.prisma.user.create({ data: { phoneNumber, preferredLanguage: "SI" } });
+  return user.id;
+}
+
+/**
+ * The Authorization header of user `id` (a validly signed access token). By default every request
+ * is made by the user whose path it uses; the authorization tests below cross users explicitly.
+ */
+function as(id: string): Promise<Record<string, string>> {
+  return api.authHeaders(id);
 }
 
 function goalsPath(id = userId) {
   return `/api/v1/users/${id}/goals`;
 }
 
-function createGoal(body: Record<string, unknown> = {}, id = userId) {
-  return api.request<FinancialGoalResponse>("POST", goalsPath(id), {
-    type: "SAVINGS",
-    name: "Emergency Fund",
-    targetAmount: "300000.00",
-    ...body,
-  });
+async function createGoal(body: Record<string, unknown> = {}, id = userId, caller = id) {
+  return api.request<FinancialGoalResponse>(
+    "POST",
+    goalsPath(id),
+    { type: "SAVINGS", name: "Emergency Fund", targetAmount: "300000.00", ...body },
+    await as(caller),
+  );
 }
 
-function updateGoal(goalId: string, body: Record<string, unknown>, id = userId) {
-  return api.request<FinancialGoalResponse>("PATCH", `${goalsPath(id)}/${goalId}`, body);
+async function updateGoal(goalId: string, body: Record<string, unknown>, id = userId, caller = id) {
+  return api.request<FinancialGoalResponse>(
+    "PATCH",
+    `${goalsPath(id)}/${goalId}`,
+    body,
+    await as(caller),
+  );
 }
 
-function listGoals(query = "") {
-  return api.request<PaginatedResponse<FinancialGoalResponse>>("GET", `${goalsPath()}${query}`);
+async function listGoals(query = "", id = userId, caller = id) {
+  return api.request<PaginatedResponse<FinancialGoalResponse>>(
+    "GET",
+    `${goalsPath(id)}${query}`,
+    undefined,
+    await as(caller),
+  );
+}
+
+async function getGoal(goalId: string, id = userId, caller = id) {
+  return api.request("GET", `${goalsPath(id)}/${goalId}`, undefined, await as(caller));
 }
 
 function fieldsOf(body: unknown): (string | null)[] {
@@ -156,7 +175,7 @@ describe("GET /api/v1/users/:userId/goals/:goalId", () => {
   it("returns the goal", async () => {
     const created = await createGoal({ targetDate: "2028-02-29" });
 
-    const response = await api.request("GET", `${goalsPath()}/${created.body.id}`);
+    const response = await getGoal(created.body.id);
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(created.body);
@@ -165,7 +184,7 @@ describe("GET /api/v1/users/:userId/goals/:goalId", () => {
   it("returns 404, without revealing it exists, for another user's goal", async () => {
     const othersGoal = await createGoal({}, otherUserId);
 
-    const response = await api.request("GET", `${goalsPath()}/${othersGoal.body.id}`);
+    const response = await getGoal(othersGoal.body.id);
 
     expect(response.status).toBe(404);
     expect(response.body).toEqual({
@@ -178,14 +197,19 @@ describe("GET /api/v1/users/:userId/goals/:goalId", () => {
   it("returns 404 when the user does not exist", async () => {
     const goal = await createGoal();
 
-    const response = await api.request("GET", `${goalsPath(UNKNOWN_ID)}/${goal.body.id}`);
+    const response = await getGoal(goal.body.id, UNKNOWN_ID);
 
     expect(response.status).toBe(404);
     expect(response.body).toMatchObject({ message: "User not found" });
   });
 
   it("returns 400 for ids that are not UUIDs", async () => {
-    const response = await api.request("GET", `/api/v1/users/nope/goals/also-nope`);
+    const response = await api.request(
+      "GET",
+      "/api/v1/users/nope/goals/also-nope",
+      undefined,
+      await as(userId),
+    );
 
     expect(response.status).toBe(400);
     expect(fieldsOf(response.body)).toEqual(["userId", "goalId"]);
@@ -261,7 +285,7 @@ describe("GET /api/v1/users/:userId/goals", () => {
   });
 
   it("returns 404 for a user that does not exist", async () => {
-    const response = await api.request("GET", goalsPath(UNKNOWN_ID));
+    const response = await listGoals("", UNKNOWN_ID);
 
     expect(response.status).toBe(404);
   });
@@ -363,5 +387,53 @@ describe("PATCH /api/v1/users/:userId/goals/:goalId", () => {
       where: { id: othersGoal.body.id },
     });
     expect(stored.name).toBe("Theirs");
+  });
+});
+
+describe("goal authorization", () => {
+  it("requires authentication (401) on every goal route", async () => {
+    const goal = await createGoal();
+    for (const [method, path] of [
+      ["GET", goalsPath()],
+      ["POST", goalsPath()],
+      ["GET", `${goalsPath()}/${goal.body.id}`],
+      ["PATCH", `${goalsPath()}/${goal.body.id}`],
+    ] as const) {
+      const response = await api.request(method, path, method === "GET" ? undefined : {});
+
+      expect(response.status, `${method} ${path}`).toBe(401);
+    }
+  });
+
+  it("User A cannot list User B's goals (404 like an unknown user)", async () => {
+    await createGoal({ name: "Theirs" }, otherUserId);
+
+    const response = await listGoals("", otherUserId, userId);
+
+    expect(response.status).toBe(404);
+    expect(response.body).toMatchObject({ message: "User not found" });
+    expect(response.text).not.toContain("Theirs");
+  });
+
+  it("User A cannot read or change User B's goal through B's path", async () => {
+    const othersGoal = await createGoal({ name: "Theirs" }, otherUserId);
+
+    const read = await getGoal(othersGoal.body.id, otherUserId, userId);
+    const write = await updateGoal(othersGoal.body.id, { name: "Hijacked" }, otherUserId, userId);
+
+    expect(read.status).toBe(404);
+    expect(read.text).not.toContain("Theirs");
+    expect(write.status).toBe(404);
+    const stored = await api.prisma.financialGoal.findUniqueOrThrow({
+      where: { id: othersGoal.body.id },
+    });
+    expect(stored.name).toBe("Theirs");
+  });
+
+  it("User A cannot create a goal for User B", async () => {
+    const response = await createGoal({}, otherUserId, userId);
+
+    expect(response.status).toBe(404);
+    expect(await api.prisma.financialGoal.count()).toBe(0);
   });
 });

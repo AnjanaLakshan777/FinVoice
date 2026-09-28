@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { ApiErrorResponse, UserResponse } from "@finvoice/contracts";
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
 
@@ -5,11 +7,17 @@ import { startTestApi, type TestApi } from "./api-app.js";
 import { truncateAllTables } from "./database.js";
 
 const WRONG_PASSWORD = "Wr0ng-Secret-Pw";
+const SOME_USER_ID = "00000000-0000-7000-8000-000000000001";
 
 let api: TestApi;
+/** Access tokens (validly signed): an administrator, and the user SOME_USER_ID. */
+let admin: Record<string, string>;
+let someUser: Record<string, string>;
 
 beforeAll(async () => {
   api = await startTestApi();
+  admin = await api.authHeaders(randomUUID(), "ADMIN");
+  someUser = await api.authHeaders(SOME_USER_ID);
 });
 
 afterAll(async () => {
@@ -53,8 +61,8 @@ describe("error safety", () => {
 
     // Both requests pass validation; the database's unique index decides which one wins.
     const responses = await Promise.all([
-      api.request<UserResponse>("POST", "/api/v1/users", body),
-      api.request<UserResponse>("POST", "/api/v1/users", body),
+      api.request<UserResponse>("POST", "/api/v1/users", body, admin),
+      api.request<UserResponse>("POST", "/api/v1/users", body, admin),
     ]);
 
     expect(responses.map((response) => response.status).sort()).toEqual([201, 409]);
@@ -68,38 +76,48 @@ describe("error safety", () => {
     ["PUT", "/api/v1/users/123/financial-profile"],
     ["GET", "/api/v1/users/123/goals"],
     ["POST", "/api/v1/users/123/goals"],
-    ["GET", "/api/v1/users/00000000-0000-7000-8000-000000000001/goals/123"],
-    ["PATCH", "/api/v1/users/00000000-0000-7000-8000-000000000001/goals/123"],
+    ["GET", `/api/v1/users/${SOME_USER_ID}/goals/123`],
+    ["PATCH", `/api/v1/users/${SOME_USER_ID}/goals/123`],
   ])("%s %s rejects a malformed id with 400", async (method, path) => {
-    const response = await api.request(method, path, method === "GET" ? undefined : {});
+    const response = await api.request(method, path, method === "GET" ? undefined : {}, someUser);
 
     expect(response.status).toBe(400);
     expect((response.body as ApiErrorResponse).code).toBe("VALIDATION_ERROR");
   });
 
   it("never exposes database details or credentials in error responses", async () => {
-    const created = await api.request<UserResponse>("POST", "/api/v1/users", {
-      phoneNumber: "+94000000502",
-      preferredLanguage: "TA",
-    });
+    const created = await api.request<UserResponse>(
+      "POST",
+      "/api/v1/users",
+      { phoneNumber: "+94000000502", preferredLanguage: "TA" },
+      admin,
+    );
     const userId = created.body.id;
-    const goal = await api.request<{ id: string }>("POST", `/api/v1/users/${userId}/goals`, {
-      type: "SAVINGS",
-      name: "Bicycle",
-      targetAmount: "45000",
-    });
+    const own = await api.authHeaders(userId);
+    const goal = await api.request<{ id: string }>(
+      "POST",
+      `/api/v1/users/${userId}/goals`,
+      { type: "SAVINGS", name: "Bicycle", targetAmount: "45000" },
+      own,
+    );
+    const unknownId = "00000000-0000-7000-8000-00000000dead";
 
     const responses = await Promise.all([
-      api.request("POST", "/api/v1/users", {
-        phoneNumber: "+94000000502",
-        preferredLanguage: "SI",
-      }),
-      api.request("POST", "/api/v1/users", { phoneNumber: "bad", isAdmin: true }),
-      api.request("GET", "/api/v1/users/00000000-0000-7000-8000-00000000dead"),
-      api.request("PUT", `/api/v1/users/${userId}/financial-profile`, { monthlyIncome: "-1" }),
-      api.request("PATCH", `/api/v1/users/${userId}/goals/${goal.body.id}`, {
-        currentAmount: "99999",
-      }),
+      api.request(
+        "POST",
+        "/api/v1/users",
+        { phoneNumber: "+94000000502", preferredLanguage: "SI" },
+        admin,
+      ),
+      api.request("POST", "/api/v1/users", { phoneNumber: "bad", isAdmin: true }, admin),
+      api.request("GET", `/api/v1/users/${unknownId}`, undefined, await api.authHeaders(unknownId)),
+      api.request("PUT", `/api/v1/users/${userId}/financial-profile`, { monthlyIncome: "-1" }, own),
+      api.request(
+        "PATCH",
+        `/api/v1/users/${userId}/goals/${goal.body.id}`,
+        { currentAmount: "99999" },
+        own,
+      ),
       api.request("GET", "/api/v1/unknown-route"),
     ]);
 
@@ -117,7 +135,9 @@ describe("error safety", () => {
     try {
       const response = await misconfigured.request(
         "GET",
-        "/api/v1/users/00000000-0000-7000-8000-000000000001",
+        `/api/v1/users/${SOME_USER_ID}`,
+        undefined,
+        await misconfigured.authHeaders(SOME_USER_ID),
       );
       const readiness = await misconfigured.request("GET", "/health/ready");
 

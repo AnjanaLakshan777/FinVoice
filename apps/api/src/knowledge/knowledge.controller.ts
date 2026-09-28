@@ -12,11 +12,13 @@ import {
 import { Controller, Get, Param, Query } from "@nestjs/common";
 
 import { KnowledgeService } from "./knowledge.service.js";
+import { Public } from "../auth/auth.decorators.js";
 
 /**
  * Read-only knowledge API. There are deliberately no write endpoints: content is managed through
  * the controlled knowledge seed until authenticated administration exists.
  */
+@Public()
 @Controller("knowledge")
 export class KnowledgeController {
   constructor(private readonly knowledge: KnowledgeService) {}

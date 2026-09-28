@@ -8,10 +8,25 @@ Default local base URL: `http://127.0.0.1:4000`
 
 ### Domain API: `/api/v1`
 
-Users, financial profiles, financial goals, financial calculations, financial-literacy knowledge, the AI agent and ScamShield: endpoints, validation rules, money and date formats, pagination and the error format are documented in **[domain-api.md](domain-api.md)**.
+Authentication, the signed-in user's own data (`/me`), users, financial profiles, financial goals, financial calculations, financial-literacy knowledge, the AI agent and ScamShield: endpoints, who may call them, validation rules, money and date formats, pagination and the error format are documented in **[domain-api.md](domain-api.md)**.
 
 | Method  | Path                                      |
 | ------- | ----------------------------------------- |
+| `POST`  | `/api/v1/auth/request-otp`                |
+| `POST`  | `/api/v1/auth/verify-otp`                 |
+| `POST`  | `/api/v1/auth/refresh`                    |
+| `POST`  | `/api/v1/auth/logout`                     |
+| `GET`   | `/api/v1/auth/me`                         |
+| `GET`   | `/api/v1/me`                              |
+| `PATCH` | `/api/v1/me`                              |
+| `GET`   | `/api/v1/me/financial-profile`            |
+| `PUT`   | `/api/v1/me/financial-profile`            |
+| `POST`  | `/api/v1/me/goals`                        |
+| `GET`   | `/api/v1/me/goals`                        |
+| `GET`   | `/api/v1/me/goals/:goalId`                |
+| `PATCH` | `/api/v1/me/goals/:goalId`                |
+| `GET`   | `/api/v1/me/financial-context`            |
+| `GET`   | `/api/v1/me/literacy-context`             |
 | `POST`  | `/api/v1/users`                           |
 | `GET`   | `/api/v1/users/:userId`                   |
 | `PATCH` | `/api/v1/users/:userId`                   |
@@ -30,7 +45,7 @@ Users, financial profiles, financial goals, financial calculations, financial-li
 | `POST`  | `/api/v1/agent/chat`                      |
 | `POST`  | `/api/v1/scamshield/analyze`              |
 
-Health checks are not versioned and stay at the root, for load balancers and orchestrators.
+Health checks are not versioned and stay at the root, for load balancers and orchestrators. Only health, calculations, knowledge, the agent, ScamShield and sign-in are public; every other route needs an access token (see [Authentication](domain-api.md#authentication)).
 
 The token-protected internal endpoints are documented in domain-api.md:
 

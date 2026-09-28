@@ -25,6 +25,7 @@ describe("database migrations", () => {
       "20260927200000_knowledge_fcrd_hotline",
       "20260927210000_knowledge_fcrd_hotline_summary",
       "20260927220000_analytics_events",
+      "20260928063800_authentication",
     ]);
 
     const status = runPrisma(["migrate", "status"], databaseUrl);
@@ -236,6 +237,82 @@ describe("database migrations", () => {
       { name: "success", type: "bool" },
       { name: "tool_name", type: "analytics_tool_name" },
     ]);
+  });
+
+  it("adds the user role (default USER) and the auth tables with only the intended structure", async () => {
+    const [role] = await prisma.$queryRaw<{ type: string; nullable: string; fallback: string }[]>`
+      SELECT udt_name AS type, is_nullable AS nullable, column_default AS fallback
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'role'`;
+    const enums = await prisma.$queryRaw<{ name: string; values: string }[]>`
+      SELECT t.typname AS name, string_agg(e.enumlabel, ',' ORDER BY e.enumsortorder) AS values
+      FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
+      WHERE t.typname = 'user_role'
+      GROUP BY t.typname`;
+    const constraints = await prisma.$queryRaw<{ name: string }[]>`
+      SELECT conname AS name FROM pg_constraint
+      WHERE conrelid IN ('otp_challenges'::regclass, 'auth_sessions'::regclass)
+        AND contype IN ('p', 'f', 'c')`;
+    const indexes = await prisma.$queryRaw<{ name: string }[]>`
+      SELECT indexname AS name FROM pg_indexes
+      WHERE schemaname = 'public' AND tablename IN ('otp_challenges', 'auth_sessions')`;
+    const columns = await prisma.$queryRaw<{ name: string }[]>`
+      SELECT table_name || '.' || column_name AS name FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name IN ('otp_challenges', 'auth_sessions')`;
+
+    expect(role).toEqual({ type: "user_role", nullable: "NO", fallback: "'USER'::user_role" });
+    expect(enums).toEqual([{ name: "user_role", values: "USER,ADMIN" }]);
+    expect(constraints.map((row) => row.name).sort()).toEqual(
+      [
+        "otp_challenges_pkey",
+        "otp_challenges_phone_number_e164_check",
+        "otp_challenges_code_hash_format_check",
+        "otp_challenges_max_attempts_range_check",
+        "otp_challenges_attempts_range_check",
+        "otp_challenges_expires_after_created_check",
+        "otp_challenges_single_outcome_check",
+        "auth_sessions_pkey",
+        "auth_sessions_user_id_fkey",
+        "auth_sessions_refresh_token_hash_format_check",
+        "auth_sessions_expires_after_created_check",
+        "auth_sessions_replaced_is_revoked_check",
+      ].sort(),
+    );
+    expect(indexes.map((row) => row.name).sort()).toEqual(
+      [
+        "otp_challenges_pkey",
+        "otp_challenges_phone_number_created_at_idx",
+        "otp_challenges_expires_at_idx",
+        "auth_sessions_pkey",
+        "auth_sessions_refresh_token_hash_key",
+        "auth_sessions_user_id_idx",
+        "auth_sessions_token_family_id_idx",
+        "auth_sessions_expires_at_idx",
+      ].sort(),
+    );
+    // Hashes only: no plaintext code or token, no message, no IP address, no user agent.
+    expect(columns.map((row) => row.name).sort()).toEqual(
+      [
+        "otp_challenges.id",
+        "otp_challenges.phone_number",
+        "otp_challenges.code_hash",
+        "otp_challenges.expires_at",
+        "otp_challenges.attempts",
+        "otp_challenges.max_attempts",
+        "otp_challenges.created_at",
+        "otp_challenges.consumed_at",
+        "otp_challenges.superseded_at",
+        "auth_sessions.id",
+        "auth_sessions.user_id",
+        "auth_sessions.refresh_token_hash",
+        "auth_sessions.token_family_id",
+        "auth_sessions.expires_at",
+        "auth_sessions.revoked_at",
+        "auth_sessions.last_used_at",
+        "auth_sessions.replaced_by_session_id",
+        "auth_sessions.created_at",
+      ].sort(),
+    );
   });
 
   it("initialises the database with UTF-8 encoding and ICU collation", async () => {

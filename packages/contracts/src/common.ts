@@ -58,6 +58,13 @@ function isRealCalendarDate(value: string): boolean {
 
 export const uuidSchema = z.uuid({ error: "Must be a valid UUID" });
 
+/**
+ * For routes that take no query parameters at all, e.g. the /me routes: anything in the query
+ * string (such as `?userId=`) is rejected with 400 instead of being silently ignored.
+ */
+export const noQuerySchema = z.strictObject({});
+export type NoQuery = z.output<typeof noQuerySchema>;
+
 /** Bounded page-based pagination: `?page=1&limit=20`. */
 export const paginationQuerySchema = z.object({
   page: z.coerce
@@ -94,6 +101,8 @@ export const API_ERROR_CODES = [
   "UNSUPPORTED_MEDIA_TYPE",
   "METHOD_NOT_ALLOWED",
   "UNAUTHORIZED",
+  "FORBIDDEN",
+  "TOO_MANY_REQUESTS",
   "BAD_GATEWAY",
   "SERVICE_UNAVAILABLE",
   "INTERNAL_ERROR",

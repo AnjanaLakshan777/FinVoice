@@ -31,7 +31,8 @@
     "db:migrate:status": "pnpm --filter @finvoice/api db:migrate:status",
     "db:seed": "pnpm build:packages && pnpm --filter @finvoice/api db:seed",
     "db:seed:knowledge": "pnpm build:packages && pnpm --filter @finvoice/api db:seed:knowledge",
-    "analytics:cleanup": "pnpm build:packages && pnpm --filter @finvoice/api analytics:cleanup"
+    "analytics:cleanup": "pnpm build:packages && pnpm --filter @finvoice/api analytics:cleanup",
+    "auth:cleanup": "pnpm build:packages && pnpm --filter @finvoice/api auth:cleanup"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

@@ -2,12 +2,14 @@ import type { DependencyStatus, ServiceHealth, ServiceReadiness } from "@finvoic
 import { Controller, Get, HttpStatus, Logger, Res } from "@nestjs/common";
 
 import { PrismaService } from "../database/prisma.service.js";
+import { Public } from "../auth/auth.decorators.js";
 
 export const API_SERVICE_NAME = "finvoice-api";
 
 /** The part of the HTTP response used to set the status code. */
 type StatusResponse = { status(code: number): unknown };
 
+@Public()
 @Controller("health")
 export class HealthController {
   private readonly logger = new Logger(HealthController.name);
