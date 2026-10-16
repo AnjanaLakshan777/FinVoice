@@ -1,286 +1,460 @@
+<div align="center">
+
 # FinVoice
 
-FinVoice is a voice-first financial inclusion and financial literacy platform for Sri Lankan users. People will be able to talk to FinVoice in **Sinhala, Tamil or English**, both in the browser and over an ordinary **telephone call**, to get clear and trustworthy help with everyday financial questions.
+**Financial guidance, one conversation at a time.**
 
-## Current status
+A voice-first financial literacy and guidance platform for Sri Lanka, designed to help people understand money, plan their finances, and recognize scams through natural conversations in Sinhala, Tamil, and English.
 
-**Step 12: web authentication and onboarding.** This repository has:
+[![Node.js](https://img.shields.io/badge/Node.js-24-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![NestJS](https://img.shields.io/badge/NestJS-API-E0234E?style=for-the-badge&logo=nestjs&logoColor=white)](https://nestjs.com/)
+[![Next.js](https://img.shields.io/badge/Next.js-Web-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Prisma](https://img.shields.io/badge/Prisma-ORM-2D3748?style=for-the-badge&logo=prisma&logoColor=white)](https://www.prisma.io/)
+[![Gemini](https://img.shields.io/badge/Gemini-Live%20AI-8E75B2?style=for-the-badge&logo=googlegemini&logoColor=white)](https://ai.google.dev/)
 
-- a pnpm monorepo with strict TypeScript, ESLint, Prettier, Vitest and CI;
-- a **web app** (Next.js) with a `/voice` page for real-time voice conversations, and sign-in (`/login`), a small account area (`/dashboard`, `/onboarding`, `/goals`) and a same-origin proxy to the API;
-- a **backend API** (NestJS) with a validated REST API for users, financial profiles and financial goals under `/api/v1`, plus liveness (`GET /health`) and database readiness (`GET /health/ready`) checks;
-- passwordless **authentication** (phone number and one-time code, `/api/v1/auth`). It issues short-lived JWT access tokens and rotating refresh sessions in an HttpOnly cookie. Authorisation covers roles (`USER`, `ADMIN`) and owner checks on all personal data, and there is an authenticated `/api/v1/me` API. **No real SMS provider yet**: sign-in works locally with a development code provider only;
-- a framework-independent **financial calculation engine** (loan repayment, savings plan, budget summary) with exact decimal arithmetic, exposed under `/api/v1/calculations`;
-- a curated, source-backed **financial knowledge base** (12 articles based on Central Bank of Sri Lanka material, in English with some Sinhala and Tamil) with read-only retrieval under `/api/v1/knowledge`;
-- a text **AI agent** (Google Gemini, Interactions API) under `/api/v1/agent/chat` that answers from the knowledge base and calculates with the finance engine through validated, allowlisted tools;
-- a personal **financial context and financial-literacy** layer for trusted services, behind a token-protected internal API;
-- **ScamShield** under `/api/v1/scamshield/analyze`: a deterministic, source-grounded check of a message, call or offer for scam warning indicators (English, with partial Sinhala and Tamil coverage). It uses no AI, never stores the submitted content or an analysis history (only a typed, content-free analytics event), and never says content is safe;
-- privacy-safe **operational analytics** (usage, languages, latency, errors; no content, no user ids) with a temporary, **disabled-by-default** admin dashboard at `/admin`, reachable only through internal, token-protected endpoints;
-- a **PostgreSQL 18** schema managed by **Prisma migrations**: users (with roles), financial profiles and goals, knowledge sources, articles and translations, and OTP challenges and refresh sessions;
-- a **voice gateway** service (Node.js) that bridges the browser (WebSocket) and **Gemini Live** (native audio), with transcription, barge-in, session resumption and FinVoice tools run through the API, plus `GET /health`;
-- shared `shared`, `contracts`, `config`, `finance-engine` and `scam-shield` packages.
+</div>
 
-Voice and the AI agent are not personalised and not tied to a signed-in user yet (voice is a local/development setup), and there is no telephony. The target architecture is described in [docs/architecture/system-overview.md](docs/architecture/system-overview.md), the database design in [docs/architecture/database.md](docs/architecture/database.md), the calculation engine in [docs/architecture/financial-calculation-engine.md](docs/architecture/financial-calculation-engine.md), the knowledge base in [docs/architecture/financial-knowledge-base.md](docs/architecture/financial-knowledge-base.md), the AI agent in [docs/architecture/ai-agent.md](docs/architecture/ai-agent.md), browser voice in [docs/architecture/browser-voice.md](docs/architecture/browser-voice.md), authentication in [docs/architecture/authentication-authorization.md](docs/architecture/authentication-authorization.md) and [docs/architecture/web-authentication.md](docs/architecture/web-authentication.md), ScamShield in [docs/architecture/scam-shield.md](docs/architecture/scam-shield.md) and the API in [docs/api/domain-api.md](docs/api/domain-api.md).
+---
+
+## Overview
+
+FinVoice is a voice-first financial literacy and guidance system being developed for Sri Lankan users. Its defining experience is **real-time financial guidance through an ordinary telephone call**. A user should be able to call a FinVoice number and speak naturally in Sinhala, Tamil, or English without needing to open a website or install a mobile application.
+
+The web application supports onboarding, financial profiles and goals, dashboards, administration, and browser-based voice interaction. It is a supporting experience; the real-phone experience is the main product.
+
+FinVoice combines conversational AI with trusted backend services to explain financial concepts, help users understand budgets and savings options, calculate loan repayments, and identify warning signs in potentially fraudulent messages.
+
+> **Core principle: AI talks and understands; trusted FinVoice services calculate and validate.**
+
+Gemini provides the conversational interface. The Finance Engine performs calculations, the reviewed knowledge base provides source-backed educational information, and ScamShield applies deterministic risk rules. The model must not replace these trusted components with invented figures or unsupported claims.
+
+## Table of contents
+
+- [Why FinVoice?](#why-finvoice)
+- [Feature highlights](#feature-highlights)
+- [Telephone-call experience](#telephone-call-experience)
+- [Architecture](#architecture)
+- [Technology stack](#technology-stack)
+- [Repository structure](#repository-structure)
+- [Getting started](#getting-started)
+- [Configuration](#configuration)
+- [Database setup](#database-setup)
+- [Running the project](#running-the-project)
+- [API overview](#api-overview)
+- [Testing](#testing)
+- [Security and privacy](#security-and-privacy)
+- [Project status](#project-status)
+- [Roadmap](#roadmap)
+
+## Why FinVoice?
+
+Financial information can be difficult to understand, and digital services can be hard to use for people who are less comfortable with apps, websites, or typing. FinVoice aims to make financial literacy more accessible through spoken conversations, supported by a web interface and trusted financial services.
+
+```mermaid
+flowchart LR
+    A["User asks a question"] --> B["FinVoice understands"]
+    B --> C{"Trusted service needed?"}
+    C -->|Calculation| D["Finance Engine"]
+    C -->|Financial facts| E["Reviewed Knowledge Base"]
+    C -->|Scam concern| F["Deterministic ScamShield"]
+    D --> G["Grounded response"]
+    E --> G
+    F --> G
+    G --> H["Spoken guidance in the user's language"]
+```
+
+## Feature highlights
+
+### ☎️ Phone-first AI assistant
+
+- Intended access through a normal telephone call.
+- Natural spoken conversations.
+- Sinhala, Tamil, and English as target languages.
+- Real-time responses using Gemini Live.
+- Call interruptions, timeouts, disconnects, and resource cleanup are core requirements.
+
+**Status:** Real telephone/SIP integration is planned and has not yet been verified as implemented.
+
+### 🗣️ Browser voice experience
+
+- Browser-to-WebSocket audio streaming.
+- AudioWorklet-based capture and playback.
+- Streaming speech output and interruption support.
+- Gemini Live session handling.
+- Useful for development and browser-based access.
+
+**Status:** Implemented in the existing voice gateway; continue to validate behavior and multilingual quality.
+
+### 💰 Financial calculation engine
+
+- Reducing-balance loan repayment estimates.
+- Savings planning.
+- Budget summaries.
+- Decimal-safe money calculations.
+- Versioned calculation behavior.
+
+The backend calculation engine—not the language model—is authoritative for calculated values.
+
+### 📚 Financial knowledge base
+
+- Saving and budgeting.
+- Borrowing and loan terminology.
+- Digital finance and payment safety.
+- Consumer protection and scam awareness.
+- Deposit protection and general financial literacy.
+- Sinhala, Tamil, and English article translations.
+- Source attribution and review metadata.
+
+### 🛡️ ScamShield
+
+- Deterministic rules for suspicious-message indicators.
+- Risk classifications: `HIGH`, `MEDIUM`, `LOW`, or `INSUFFICIENT_INFORMATION`.
+- Evidence-based explanations and safe next steps.
+- Sensitive card-like number masking.
+- No guarantee that a message is safe merely because no indicator was detected.
+
+### 👤 Profiles and financial goals
+
+- Phone-based OTP authentication.
+- User profile and preferred language.
+- Monthly income and expense profile.
+- Savings, emergency fund, and debt-repayment goals.
+- Goal progress and protected user-specific APIs.
+
+A real production SMS provider is still required before public OTP sign-in is production-ready.
+
+### 📊 Analytics and administration
+
+- Privacy-conscious typed analytics events.
+- Aggregated usage and operational views.
+- Knowledge-base review information.
+- Protected admin endpoints and dashboard.
+- Retention and cleanup processes.
+
+### 🔐 Security and privacy
+
+- Protected internal APIs.
+- Role and ownership checks.
+- Hashed OTP challenges and refresh tokens.
+- Server-side AI credentials.
+- No raw call recording or transcript persistence by default.
+- Financial and scam logic separated from AI-generated language.
+
+## Telephone-call experience
+
+The target phone experience is:
+
+1. A user calls a configured FinVoice telephone number.
+2. A compatible telephony provider routes the call to the telephony system.
+3. Asterisk/PJSIP manages the call.
+4. AudioSocket (or another evaluated transport) connects the call to a TypeScript voice bridge.
+5. The bridge streams audio to the existing Gemini Live integration.
+6. Gemini uses trusted FinVoice tools when calculations, knowledge lookup, user context, or scam analysis are needed.
+7. Spoken responses return to the caller.
+8. The call ends cleanly, with bounded resource usage and safe error handling.
+
+```mermaid
+flowchart TB
+    U["User's telephone"] --> SIP["Telephone / SIP provider"]
+    SIP --> AST["Asterisk / PJSIP"]
+    AST <-->|"Live audio"| BR["FinVoice TypeScript voice bridge"]
+    BR <-->|"Realtime audio"| GL["Gemini Live"]
+    GL --> TOOLS["Allowlisted FinVoice tools"]
+    TOOLS --> API["FinVoice API"]
+    API --> FE["Finance Engine"]
+    API --> KB["Financial Knowledge Base"]
+    API --> SS["ScamShield"]
+    GL --> BR
+    BR --> AST
+    AST --> U
+```
+
+The proposed telephony design is informed by a separate reference project. It must be validated against FinVoice's current gateway before implementation. **The existence of browser voice does not mean real telephone calls are already supported.**
+
+## Architecture
+
+FinVoice is organized as a TypeScript monorepo. The web application, API, and voice gateway have separate responsibilities while sharing typed contracts and trusted domain packages.
+
+```mermaid
+flowchart TB
+    subgraph Clients
+        WEB["Next.js Web App"]
+        PHONE["Telephone caller"]
+    end
+    subgraph Services
+        API["NestJS API"]
+        VG["Voice Gateway"]
+        TEL["Planned telephony adapter"]
+    end
+    subgraph TrustedDomain
+        FE["Finance Engine"]
+        KB["Knowledge Base"]
+        SC["ScamShield"]
+        CTX["Financial Context and Literacy"]
+    end
+    DB[("PostgreSQL")]
+    GEM["Gemini APIs"]
+    WEB <--> API
+    PHONE --> TEL
+    TEL <--> VG
+    VG <--> GEM
+    VG --> API
+    API --> FE
+    API --> KB
+    API --> SC
+    API --> CTX
+    API <--> DB
+```
+
+### Main components
+
+| Component | Responsibility |
+|---|---|
+| `apps/web` | Next.js web interface, authentication, onboarding, goals, and browser experience |
+| `apps/api` | NestJS REST APIs, authentication, user domain, trusted tools, knowledge, calculations, analytics |
+| `apps/voice-gateway` | Realtime voice sessions and Gemini Live integration; planned phone-audio adapter |
+| `packages/finance-engine` | Framework-independent deterministic financial calculations |
+| `packages/contracts` | Shared API contracts and validation schemas |
+| `packages/shared` | Shared types and utilities |
+| `packages/config` | Shared configuration and project conventions |
+| PostgreSQL + Prisma | Persistent domain data, knowledge content, authentication state, and analytics |
+
+The exact directory and package names should be confirmed against the current repository before making code changes.
+
+## Technology stack
+
+### Backend and shared packages
+
+- Node.js 24 LTS
+- TypeScript and pnpm workspaces
+- NestJS
+- PostgreSQL 18 and Prisma ORM
+- Decimal.js for deterministic money calculations
+- Vitest and automated CI checks
+
+### Web and voice
+
+- Next.js and React
+- WebSocket-based browser voice transport
+- AudioWorklet for browser audio
+- Google Gemini Interactions API for the text agent
+- Google Gemini Live API for realtime voice
+
+### Planned telephony layer
+
+- A compatible telephone/SIP provider
+- Asterisk with PJSIP
+- AudioSocket or another validated audio transport
+- TypeScript bridge integrated with the existing voice gateway
+
+Telephony provider availability, pricing, SIP credentials, and production connectivity have not yet been verified.
 
 ## Repository structure
 
+This is the current monorepo layout for the project.
+
 ```text
-finvoice/
+FinVoice/
+├── .github/
+│   └── workflows/
 ├── apps/
-│   ├── web/              Next.js web application            → http://localhost:3000
-│   ├── api/              NestJS backend API                 → http://127.0.0.1:4000
-│   │   └── prisma/       Database schema, migrations and development seed
-│   └── voice-gateway/    Node.js real-time voice service    → http://127.0.0.1:4100
-├── packages/
-│   ├── shared/           Framework-agnostic shared types (e.g. ServiceHealth)
-│   ├── contracts/        API request schemas and response types (shared by API and clients)
-│   ├── finance-engine/   Deterministic financial calculations (exact decimals, no framework)
-│   ├── scam-shield/      Deterministic scam warning-indicator engine (no AI, no network)
-│   └── config/           Validated environment configuration for each service
-├── infrastructure/
-│   ├── docker/           Container build files (future)
-│   └── postgres/         Database infrastructure notes
+│   ├── api/                  # NestJS REST API and domain services
+│   ├── web/                  # Next.js web app and browser experience
+│   └── voice-gateway/        # Realtime voice gateway / Gemini integration
 ├── docs/
-│   ├── architecture/     System architecture and database design
-│   ├── api/              HTTP endpoint documentation
-│   └── decisions/        Architecture decision records (ADRs)
-├── .github/workflows/    CI pipeline
-├── docker-compose.yml    Local PostgreSQL
-├── .env.example          Environment variable template (placeholders only)
-└── tsconfig.base.json    Shared strict TypeScript settings
+│   ├── api/
+│   ├── architecture/
+│   └── decisions/
+├── infrastructure/
+│   ├── docker/
+│   └── postgres/
+├── packages/
+│   ├── config/              # Shared config and conventions
+│   ├── contracts/            # Shared contracts and validation schemas
+│   ├── finance-engine/       # Deterministic financial calculations
+│   ├── scam-shield/          # Scam detection and risk classification logic
+│   └── shared/               # Shared utilities and types
+├── .editorconfig
+├── .env
+├── .env.example
+├── .gitattributes
+├── .gitignore
+├── .nvmrc
+├── .prettierignore
+├── .prettierrc.json
+├── docker-compose.yml
+├── eslint.config.js
+├── package.json
+├── pnpm-lock.yaml
+├── pnpm-workspace.yaml
+├── README.md
+└── tsconfig.base.json
 ```
-
-## Prerequisites
-
-- **Node.js 24 LTS** (see `.nvmrc`)
-- **pnpm 12**: run `corepack enable` once and the version pinned in `package.json` is used automatically
-- **Docker** with Docker Compose v2, for PostgreSQL and the database integration tests
 
 ## Getting started
 
-### 1. Install dependencies
+### Prerequisites
 
-```sh
-corepack enable
-pnpm install          # also generates the Prisma client
-```
+| Requirement | Purpose |
+|---|---|
+| Node.js 24 | API, web, voice gateway, and tooling |
+| pnpm | Monorepo package management |
+| Docker Desktop | Local PostgreSQL service |
+| Git | Version control |
+| Gemini API credentials | AI agent and voice functionality |
+| SIP/telephony credentials | Required only when testing real phone calls |
 
-### 2. Create your local environment file
-
-```sh
-cp .env.example .env          # PowerShell: Copy-Item .env.example .env
-```
-
-Edit `.env` and replace the placeholder values. Set `POSTGRES_PASSWORD`, and use the same password in `DATABASE_URL`. `.env` is git-ignored. Never commit it.
-
-### 3. Start PostgreSQL
-
-```sh
-pnpm db:up        # docker compose up --detach --wait postgres
-```
-
-This waits until the container's health check passes. PostgreSQL is then available on `127.0.0.1:5432`, or on `POSTGRES_PORT` if you set it.
-
-> **Port 5432 already in use?** If another PostgreSQL (for example a Windows installation) is running on this machine, set another port in **your** `.env`: `POSTGRES_PORT=5433`, and use the same port in `DATABASE_URL` (`…@localhost:5433/finvoice`). `.env` is machine-specific; the project default stays 5432.
-
-Related commands:
-
-```sh
-pnpm db:logs                    # follow PostgreSQL logs
-pnpm db:down                    # stop the container (data is kept)
-docker compose down --volumes   # stop and delete all local data
-```
-
-### 4. Apply database migrations
-
-```sh
-pnpm db:migrate          # prisma migrate deploy: applies pending migrations
-pnpm db:seed:knowledge   # loads the curated knowledge base (insert-only, safe to repeat)
-pnpm db:seed             # optional: loads fake demo users and goals (local databases only)
-```
-
-## Running the applications
-
-Each command below builds the shared packages first when needed. In development, the API and the voice gateway read the root `.env`. The API requires `DATABASE_URL`. Other variables have local defaults.
-
-| Application   | Command                  | URL                                                                         |
-| ------------- | ------------------------ | --------------------------------------------------------------------------- |
-| Web app       | `pnpm dev:web`           | http://localhost:3000 (voice: http://localhost:3000/voice)                  |
-| Backend API   | `pnpm dev:api`           | http://127.0.0.1:4000/health                                                |
-| Voice gateway | `pnpm dev:voice-gateway` | http://127.0.0.1:4100/health (voice WebSocket: `ws://127.0.0.1:4100/voice`) |
-| All three     | `pnpm dev`               | as above                                                                    |
-
-To confirm the API can reach PostgreSQL, open http://127.0.0.1:4000/health/ready. It returns `200` with `"database": "up"`, or `503` if the database is unreachable.
-
-### Trying the API
-
-With `pnpm dev:api` running and migrations applied, the domain API is at `http://127.0.0.1:4000/api/v1`.
-
-Personal data needs a signed-in user. For local sign-in, add these to your own root `.env` (never committed), then restart the API:
-
-- `AUTH_JWT_SECRET` and `AUTH_OTP_PEPPER`: two **different** random secrets, generated with `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`;
-- `AUTH_OTP_PROVIDER=dev`;
-- `AUTH_OTP_DEV_CODE`: an 8-digit code of your choice.
-
-The development provider sends no SMS: every sign-in code is your `AUTH_OTP_DEV_CODE`. It works **only** with `NODE_ENV` set to exactly `development` or `test` (as in `.env.example`), and never in staging, preview or production, where a real SMS provider is required. Without the secrets, sign-in and personal routes answer `503` and everything else works. For example, in PowerShell (with the code in `$env:AUTH_OTP_DEV_CODE`):
-
-```powershell
-$api = "http://127.0.0.1:4000/api/v1"
-$challenge = Invoke-RestMethod -Method Post "$api/auth/request-otp" -ContentType "application/json" `
-  -Body '{"phoneNumber":"+94000000901"}'
-$verify = @{ challengeId = $challenge.challengeId; code = $env:AUTH_OTP_DEV_CODE; preferredLanguage = "SI" } | ConvertTo-Json
-$signIn = Invoke-RestMethod -Method Post "$api/auth/verify-otp" -ContentType "application/json" -Body $verify
-$auth = @{ Authorization = "Bearer $($signIn.accessToken)" }
-Invoke-RestMethod -Method Put "$api/me/financial-profile" -Headers $auth -ContentType "application/json" `
-  -Body '{"monthlyIncome":"150000.00","monthlyExpenses":"100000.00"}'
-Invoke-RestMethod -Method Post "$api/me/goals" -Headers $auth -ContentType "application/json" `
-  -Body '{"type":"EMERGENCY_FUND","name":"Emergency Fund","targetAmount":"300000.00","targetDate":"2027-06-30"}'
-Invoke-RestMethod "$api/me/financial-context" -Headers $auth
-```
-
-The access token lasts 15 minutes. The refresh token is an HttpOnly cookie for `POST /api/v1/auth/refresh` (see [docs/api/domain-api.md](docs/api/domain-api.md#authentication)).
-
-### Signing in on the web
-
-With the same `.env` settings, start everything (`pnpm dev`) and open http://localhost:3000/login. Enter a fake number such as `+94000000901`, then your `AUTH_OTP_DEV_CODE`. A new account goes through a short onboarding (name, language, monthly income and expenses, a first goal); then `/dashboard` and `/goals` show your data. The web server forwards `/api/v1` to the API (`INTERNAL_API_URL`), so the refresh cookie stays HttpOnly on the web origin and the access token lives only in the page's memory: a reload renews it from the cookie. **Real SMS is not implemented**: the development code works only with `NODE_ENV=development` or `test`. See [docs/architecture/web-authentication.md](docs/architecture/web-authentication.md).
-
-Calculations need no stored data or sign-in:
-
-```powershell
-Invoke-RestMethod -Method Post "$api/calculations/loan" -ContentType "application/json" `
-  -Body '{"principal":"500000.00","annualInterestRate":"12.00","termMonths":36}'
-# monthlyPayment 16607.15 (×35), finalPayment 16607.33, totalRepayment 597857.58, totalInterest 97857.58
-```
-
-The AI agent needs `GEMINI_API_KEY` in your `.env` (server-side only; without it the agent answers `503` and everything else works):
-
-```powershell
-Invoke-RestMethod -Method Post "$api/agent/chat" -ContentType "application/json" `
-  -Body '{"message":"What is an emergency fund?","language":"EN"}'
-```
-
-ScamShield checks a message for scam warning indicators. It needs no Gemini key and never stores the submitted content (only a content-free `SCAM_ANALYSIS` analytics event). Use made-up text, never real personal data:
-
-```powershell
-Invoke-RestMethod -Method Post "$api/scamshield/analyze" -ContentType "application/json" `
-  -Body '{"content":"Your account will be closed. Send us your OTP now.","language":"EN","sourceType":"MESSAGE"}'
-# riskLevel HIGH, indicators CREDENTIAL_REQUEST and URGENCY_PRESSURE, actions DO_NOT_SHARE_CREDENTIALS, …
-```
-
-The result lists warning indicators, not a verdict. It never says content is safe. See [docs/architecture/scam-shield.md](docs/architecture/scam-shield.md).
-
-### Admin dashboard (local development only)
-
-A temporary, aggregate-only analytics dashboard at http://localhost:3000/admin. It is not connected to user sign-in, so it has no login: it is **disabled by default** (a 404) and must only be enabled on your own machine or a trusted internal network. It shows counts, languages, latency, errors and the knowledge review queue, never messages, transcripts, amounts or personal details. See [docs/architecture/analytics.md](docs/architecture/analytics.md).
-
-1. Make sure your root `.env` has `INTERNAL_API_TOKEN` (see "Talking to FinVoice" below) and apply the migrations (`pnpm db:migrate`).
-2. Start the API: `pnpm dev:api`.
-3. Start the web app with the dashboard enabled for this run only:
-
-   ```powershell
-   $env:ADMIN_DASHBOARD_ENABLED = "true"; pnpm dev:web      # PowerShell
-   ```
-
-   ```sh
-   ADMIN_DASHBOARD_ENABLED=true pnpm dev:web                # bash
-   ```
-
-   The web **server** reads `INTERNAL_API_URL` (default `http://127.0.0.1:4000`) and `INTERNAL_API_TOKEN` from the root `.env` and calls the API's internal endpoints. The token never reaches the browser. Never put it in a `NEXT_PUBLIC_*` variable.
-
-4. Open http://localhost:3000/admin.
-
-Analytics events are kept for `ANALYTICS_RETENTION_DAYS` (default 90). `pnpm analytics:cleanup` deletes older ones and prints only a count.
-
-### Talking to FinVoice (browser voice)
-
-Voice needs, in your root `.env`:
-
-- `GEMINI_API_KEY`: used server-side by the voice gateway (never by the browser);
-- `INTERNAL_API_TOKEN`: a random string of at least 32 characters, shared by the API and the voice gateway (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`).
-
-Optional: `GEMINI_LIVE_MODEL` (default `gemini-3.8-live`), `GEMINI_LIVE_VOICE` (the prebuilt voice, default `Kore`), `VOICE_WEB_ORIGIN` (default `http://localhost:3000,http://127.0.0.1:3000`) and, in `apps/web/.env.local`, `NEXT_PUBLIC_VOICE_GATEWAY_URL` (default `ws://127.0.0.1:4100/voice`).
-
-1. Start PostgreSQL and load the knowledge base (`pnpm db:up`, `pnpm db:migrate`, `pnpm db:seed:knowledge`).
-2. Start the API, the voice gateway and the web app: `pnpm dev` (or `pnpm dev:api`, `pnpm dev:voice-gateway` and `pnpm dev:web` in three terminals).
-3. Open http://localhost:3000/voice, choose Sinhala, Tamil or English, press **Start voice** and allow the microphone. Speak; FinVoice answers aloud and the transcript appears on the page. Speak over it to interrupt. Press **Stop** to end.
-
-Nothing is recorded. Use headphones to avoid FinVoice hearing itself. The voice gateway has no authentication yet: keep it on `127.0.0.1` and do not expose it publicly. See [docs/architecture/browser-voice.md](docs/architecture/browser-voice.md).
-
-Money is always sent as a string (`"150000.00"`), never as a number. See [docs/api/domain-api.md](docs/api/domain-api.md) for every endpoint, rule and error, and for curl examples.
-
-All dev servers reload on change. To run the production builds instead:
-
-```sh
-pnpm build
-pnpm --filter @finvoice/web start
-pnpm --filter @finvoice/api start
-pnpm --filter @finvoice/voice-gateway start
-```
-
-## Database
-
-The schema lives in [apps/api/prisma/schema.prisma](apps/api/prisma/schema.prisma), and every change to it ships as a SQL migration in `apps/api/prisma/migrations/`. The schema is never synchronised automatically; see [docs/architecture/database.md](docs/architecture/database.md) for the design and the reasons.
-
-| Task                                        | Command                                   |
-| ------------------------------------------- | ----------------------------------------- |
-| Apply pending migrations                    | `pnpm db:migrate`                         |
-| Show migration status                       | `pnpm db:migrate:status`                  |
-| Create a migration after editing the schema | `pnpm db:migrate:create --name <change>`  |
-| Load the curated knowledge base             | `pnpm db:seed:knowledge`                  |
-| Delete analytics older than the retention   | `pnpm analytics:cleanup`                  |
-| Delete expired OTP codes and auth sessions  | `pnpm auth:cleanup`                       |
-| Load the fake development seed data         | `pnpm db:seed`                            |
-| Regenerate the Prisma client                | `pnpm --filter @finvoice/api db:generate` |
-
-- `db:migrate` runs `prisma migrate deploy`. It only applies committed migrations, and it is the same command used in CI and production.
-- `db:migrate:create` writes the SQL for your schema change **without applying it**. Review it, add any CHECK constraints, then run `pnpm db:migrate`.
-- `db:migrate:status` lists applied and pending migrations and exits non-zero if the database is behind.
-- Never edit a migration that has been applied anywhere, and never run `prisma migrate reset` or `prisma db push` against a shared database.
-- `db:seed:knowledge` inserts only missing knowledge records and never updates or deletes existing ones, so it is safe to repeat and never overwrites edited content. With `NODE_ENV=production` it needs `--allow-production`.
-- `db:seed` is deterministic, uses fake phone numbers, and refuses to run when `NODE_ENV=production` or the database is not local.
-
-## Tests and quality checks
-
-| Task                                         | Command                 |
-| -------------------------------------------- | ----------------------- |
-| Unit tests (no Docker needed)                | `pnpm test`             |
-| Database integration tests (needs Docker)    | `pnpm test:integration` |
-| Browser end-to-end test (DB, builds, Chrome) | `pnpm test:e2e`         |
-| Lint                                         | `pnpm lint`             |
-| Lint and auto-fix                            | `pnpm lint:fix`         |
-| Type-check every project                     | `pnpm typecheck`        |
-| Check formatting                             | `pnpm format:check`     |
-| Format all files                             | `pnpm format`           |
-| Build all apps and packages                  | `pnpm build`            |
-| Remove build output                          | `pnpm clean`            |
-
-**Database integration tests** (`apps/api/test/integration`) need a running Docker engine, but **not** your development database, which they never touch:
-
-1. They start a disposable PostgreSQL container, with the same image and ICU settings as `docker-compose.yml`, using [Testcontainers](https://testcontainers.com/).
-2. They apply every migration with `prisma migrate deploy`.
-3. They check the constraints, indexes, relationships and migration state, and exercise every `/api/v1` endpoint over HTTP against that database.
-4. They remove the container.
-
-The first run downloads the PostgreSQL image.
-
-To run a command in one project only, use a filter, for example `pnpm --filter @finvoice/api test`.
-
-CI (`.github/workflows/ci.yml`) runs on every pull request and on every push to `main`. It checks formatting, lint and types, runs the unit and database integration tests and the build, and validates the Docker Compose file.
+Use the repository's `.nvmrc` and package-manager configuration where available. Confirm versions from the repository before installing or upgrading tools.
 
 ## Configuration
 
-Environment variables are documented in [.env.example](.env.example) and validated at startup by [`packages/config`](packages/config). A service with invalid configuration refuses to start and lists every problem, without echoing secret values. Secrets must come from the environment and must never be committed to the repository.
+1. Review `.env.example`.
+2. Configure local environment values using your own credentials.
+3. Keep secrets out of source control and frontend bundles.
+4. Never paste secrets into logs, screenshots, prompts, or documentation.
 
-## Documentation
+Configuration categories may include PostgreSQL, Gemini, internal API/voice-gateway authentication, OTP/session settings, admin access, and optional telephony/SIP/Asterisk settings. Use the exact variable names defined by `.env.example` and the configuration code; do not assume names from this README.
 
-- [System overview](docs/architecture/system-overview.md): the target voice and web architecture
-- [Database](docs/architecture/database.md): schema, money representation, indexing and migration strategy
-- [Financial calculation engine](docs/architecture/financial-calculation-engine.md): formulas, rounding policy, and why AI never does the maths
-- [Financial knowledge base](docs/architecture/financial-knowledge-base.md): sources, translations, review dates, retrieval, and why there is no RAG yet
-- [AI agent](docs/architecture/ai-agent.md): Gemini integration, tools, validation, safety rules and API-key security
-- [Browser voice](docs/architecture/browser-voice.md): WebSocket protocol, audio formats, Gemini Live, interruption, tools, sessions and security
-- [Personal financial context](docs/architecture/personal-financial-context.md): the internal user-context API and literacy profile
-- [ScamShield](docs/architecture/scam-shield.md): deterministic scam warning indicators, sources, risk levels, privacy and governance
-- [Analytics and admin dashboard](docs/architecture/analytics.md): privacy-safe events, aggregation, retention, internal API and dashboard security
-- [API endpoints](docs/api/README.md) and the [domain API reference](docs/api/domain-api.md)
-- [ADR 0001: Repository foundation](docs/decisions/0001-repository-foundation.md): why the foundation looks the way it does
+> **Never commit real credentials.** Keep API keys server-side. Use development-only credentials locally and rotate any secret that may have been exposed.
+
+## Database setup
+
+FinVoice uses PostgreSQL and Prisma migrations.
+
+The local Docker PostgreSQL service uses host port **5433** because another local PostgreSQL installation uses port 5432. Preserve this mapping unless the project owner explicitly approves a change.
+
+From the repository root, the currently reported scripts include:
+
+```bash
+pnpm db:up
+pnpm db:migrate:status
+```
+
+After checking migration status and the current scripts, local migrations can be applied with:
+
+```bash
+pnpm db:migrate
+```
+
+Use fake/development data locally. Review migrations and back up persistent data before applying schema changes to a shared or production database.
+
+## Running the project
+
+Run commands from the repository root unless noted otherwise. Confirm script names in `package.json` before running them.
+
+### 1. Start PostgreSQL
+
+```bash
+pnpm db:up
+```
+
+### 2. Start the API
+
+In a separate terminal:
+
+```bash
+pnpm dev:api
+```
+
+A previously used local readiness endpoint is:
+
+```text
+http://127.0.0.1:4000/health/ready
+```
+
+Confirm the configured port and health route from the current code.
+
+### 3. Start the web application
+
+```bash
+pnpm dev:web
+```
+
+Open the URL printed by Next.js, commonly `http://localhost:3000`.
+
+### 4. Start the voice gateway when needed
+
+```bash
+pnpm dev:voice-gateway
+```
+
+The voice gateway requires the configured API and Gemini credentials. Browser voice testing is separate from real telephone-call testing.
+
+### 5. Start all development services
+
+```bash
+pnpm dev
+```
+
+Use this only after confirming local configuration and required services are ready. Do not start paid telephony services or place external calls without explicit approval.
+
+## API overview
+
+The current API includes authentication and current-user profile, financial profiles and goals, loan/savings/budget calculations, financial knowledge, text-agent conversations, internal context/tool access, ScamShield, analytics, and protected administration.
+
+Representative routes reported as implemented include:
+
+```text
+POST   /api/v1/auth/request-otp
+POST   /api/v1/auth/verify-otp
+POST   /api/v1/auth/refresh
+POST   /api/v1/auth/logout
+GET    /api/v1/auth/me
+
+POST   /api/v1/agent/chat
+
+POST   /api/v1/calculations/loan
+POST   /api/v1/calculations/savings
+POST   /api/v1/calculations/budget
+```
+
+Authenticated `/me` routes include profile, financial-profile, and goal operations. Verify route definitions and API documentation in the current source before relying on this list.
+
+## Testing
+
+Use the scripts defined by the repository. The following commands have been reported as available:
+
+```bash
+pnpm test
+pnpm test:integration
+pnpm test:e2e
+pnpm typecheck
+pnpm lint
+pnpm build
+pnpm format:check
+```
+
+Run targeted tests during development, then relevant full checks before completing a change. Report exact commands and results. Never claim a test passed unless it was actually run.
+
+### Additional phone-integration tests required
+
+- Inbound call connects to the intended FinVoice session.
+- Caller speech reaches Gemini and spoken response returns to the phone.
+- Correct audio framing and sample-rate conversion.
+- Silence, interruption/barge-in, and long turns.
+- Clean hang-up and resource cleanup.
+- SIP, AudioSocket, Gemini, and backend timeouts/failures.
+- Concurrent calls, usage limits, and cost controls.
+- Sinhala, Tamil, and English real-call acceptance tests.
+- No unintended audio/transcript persistence or sensitive logging.
+
+## Security and privacy
+
+- Never request banking PINs, OTPs, passwords, full card details, or online-banking credentials.
+- Treat caller ID as unverified identity unless a separate trusted process verifies it.
+- Do not record calls or persist transcripts by default.
+- Keep API keys and internal tokens server-side.
+- Bound tool calls, session length, concurrent calls, payloads, retries, and cost.
+- Use reviewed sources for financial facts and show assumptions for calculations.
+- A missing ScamShield indicator is not proof that a message is safe.
+- Review applicable Sri Lankan data-protection, privacy, and telephony obligations before public launch.
+
+---
+
+<div align="center">
+
+**FinVoice — Financial guidance, one conversation at a time.**
+
+</div>
