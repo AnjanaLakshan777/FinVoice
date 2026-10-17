@@ -7,6 +7,9 @@
   --warn-bg: #fff4e5;
   --warn-ink: #6b3d00;
 
+  /* The dashboard keeps its own light palette, also when the rest of the site is in dark mode. */
+  color-scheme: light;
+  background: #fff;
   max-width: 72rem;
   margin: 0 auto;
   padding: 1.5rem 1rem 3rem;

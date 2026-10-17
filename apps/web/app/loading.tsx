@@ -1,3 +1,7 @@
 export default function Loading() {
-  return <p role="status">Loading…</p>;
+  return (
+    <p role="status" className="fv-page">
+      Loading…
+    </p>
+  );
 }

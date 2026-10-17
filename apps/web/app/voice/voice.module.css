@@ -1,18 +1,27 @@
 .page {
-  max-width: 44rem;
+  max-width: 46rem;
   margin: 0 auto;
-  padding: 2rem 1rem;
-  font-family: system-ui, sans-serif;
-  line-height: 1.5;
+  padding: 2rem 1rem 3rem;
+}
+
+.page h1 {
+  margin: 0 0 0.5rem;
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
 }
 
 .intro {
-  color: #444;
+  margin: 0 0 1.5rem;
+  color: var(--fv-muted);
 }
 
 .console {
   display: grid;
-  gap: 1rem;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  border-radius: var(--fv-radius);
+  background: var(--fv-surface);
+  border: 1px solid var(--fv-line);
+  box-shadow: var(--fv-shadow);
 }
 
 .controls {
@@ -24,94 +33,232 @@
 
 .field {
   display: grid;
-  gap: 0.25rem;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--fv-muted);
 }
 
 .controls select,
 .controls button {
-  font: inherit;
-  padding: 0.5rem 0.9rem;
+  min-height: 2.9rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid var(--fv-line);
+  background: var(--fv-surface);
+  color: var(--fv-ink);
+  cursor: pointer;
 }
 
-.start {
+.controls select {
+  padding-right: 2rem;
   font-weight: 600;
+}
+
+.controls button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+
+.controls button:hover:not(:disabled) {
+  border-color: var(--fv-brand);
+  color: var(--fv-brand);
+}
+
+.controls button:disabled,
+.controls select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.controls .start {
+  padding: 0.55rem 1.5rem;
+  background: var(--fv-brand);
+  border-color: var(--fv-brand);
+  color: var(--fv-on-brand);
+}
+
+.controls .start:hover:not(:disabled) {
+  background: var(--fv-brand-strong);
+  border-color: var(--fv-brand-strong);
+  color: var(--fv-on-brand);
 }
 
 .status {
   display: flex;
-  gap: 2rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   margin: 0;
 }
 
+.status > div {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--fv-radius-sm);
+  background: var(--fv-surface-2);
+  flex: 1 1 8.5rem;
+  max-width: 14rem;
+}
+
 .status dt {
-  font-size: 0.85rem;
-  color: #555;
+  font-size: 0.8rem;
+  color: var(--fv-muted);
 }
 
 .status dd {
   margin: 0;
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 700;
+}
+
+/* A coloured dot before each status: grey by default, green when live, red on problems. */
+.status dd::before {
+  content: "";
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--fv-muted);
+}
+
+.status dd[data-state="active"]::before,
+.status dd[data-state="on"]::before {
+  background: var(--fv-success);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--fv-success) 25%, transparent);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.status dd[data-state="connecting"]::before,
+.status dd[data-state="requesting"]::before,
+.status dd[data-state="stopping"]::before {
+  background: var(--fv-accent);
+}
+
+.status dd[data-state="error"]::before,
+.status dd[data-state="denied"]::before,
+.status dd[data-state="unavailable"]::before {
+  background: var(--fv-danger);
+}
+
+@keyframes pulse {
+  50% {
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--fv-success) 5%, transparent);
+  }
 }
 
 .tool {
+  justify-self: start;
   margin: 0;
-  color: #1a4d8f;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  background: var(--fv-brand-soft);
+  color: var(--fv-brand);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.error,
+.notice {
+  margin: 0;
+  padding: 0.8rem 1rem;
+  border-radius: var(--fv-radius-sm);
+  border-left: 4px solid;
 }
 
 .error {
-  margin: 0;
-  padding: 0.75rem;
-  border: 1px solid #b00020;
-  background: #fdecee;
-  color: #7a0016;
+  border-color: var(--fv-danger);
+  background: var(--fv-danger-soft);
+  color: var(--fv-danger-ink);
+}
+
+.notice {
+  border-color: var(--fv-warn-line);
+  background: var(--fv-warn-soft);
+  color: var(--fv-warn-ink);
+}
+
+.latest {
+  display: grid;
+  gap: 0.4rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--fv-line);
 }
 
 .latest p {
-  margin: 0.25rem 0;
+  margin: 0;
+}
+
+.latest strong {
+  color: var(--fv-muted);
+  font-size: 0.9rem;
 }
 
 .transcriptTitle {
-  margin: 0;
-  font-size: 1.1rem;
+  margin: 0.5rem 0 0;
+  font-size: 1.15rem;
 }
 
 .empty {
   margin: 0;
-  color: #666;
+  padding: 1.5rem;
+  border-radius: var(--fv-radius-sm);
+  border: 1px dashed var(--fv-line);
+  color: var(--fv-muted);
+  text-align: center;
 }
 
 .transcript {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  gap: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
 .user,
 .finvoice {
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.5rem;
+  max-width: 85%;
+  padding: 0.65rem 0.95rem;
+  border-radius: 18px;
 }
 
 .user {
-  background: #eef3f8;
+  align-self: flex-end;
+  border-bottom-right-radius: 6px;
+  background: var(--fv-brand);
+  color: var(--fv-on-brand);
 }
 
 .finvoice {
-  background: #eef8f0;
+  align-self: flex-start;
+  border-bottom-left-radius: 6px;
+  background: var(--fv-surface-2);
 }
 
 .speaker {
   display: block;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #555;
+  margin-bottom: 0.1rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  opacity: 0.8;
 }
 
 .diagnostics {
   font-size: 0.85rem;
-  color: #444;
+  color: var(--fv-muted);
+  padding: 0.75rem 1rem;
+  border-radius: var(--fv-radius-sm);
+  background: var(--fv-surface-2);
+}
+
+.diagnostics summary {
+  cursor: pointer;
+  font-weight: 600;
 }
 
 .diagnostics dl {
@@ -127,18 +274,37 @@
 
 .diagnostics dd {
   margin: 0;
-  font-family: ui-monospace, monospace;
+  font-family: var(--fv-mono);
+  overflow-wrap: anywhere;
 }
 
-.notice {
-  margin: 0;
-  padding: 0.75rem;
-  border: 1px solid #b58a00;
-  background: #fff8e1;
-  color: #5c4500;
+.diagnostics .controls {
+  margin-top: 0.75rem;
 }
 
 .audioLine {
   margin: 0.5rem 0;
-  font-family: ui-monospace, monospace;
+  font-family: var(--fv-mono);
+}
+
+@media (max-width: 30rem) {
+  .console {
+    padding: 1.1rem;
+  }
+
+  .controls .field {
+    flex: 1 1 100%;
+  }
+
+  .status dd {
+    font-size: 0.95rem;
+  }
+
+  .controls .field select {
+    width: 100%;
+  }
+
+  .diagnostics dl {
+    grid-template-columns: 1fr;
+  }
 }

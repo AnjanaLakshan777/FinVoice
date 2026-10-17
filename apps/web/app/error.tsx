@@ -13,9 +13,9 @@ export default function ErrorPage({ error, reset }: ErrorPageProps) {
   }, [error]);
 
   return (
-    <main>
+    <main className="fv-page">
       <h1>Something went wrong</h1>
-      <button type="button" onClick={reset}>
+      <button type="button" className="fv-button" onClick={reset}>
         Try again
       </button>
     </main>
