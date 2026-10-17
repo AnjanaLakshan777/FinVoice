@@ -6,8 +6,8 @@
  * does not point at this machine, so it cannot be run against a shared or production database
  * by accident.
  *
- * Phone numbers use "+94" followed by 0, which is never assigned in Sri Lanka's numbering plan,
- * so they cannot belong to a real person.
+ * The demo users are guest accounts without any sessions, so nobody can sign in to them; they
+ * exist for database-level development only, and `pnpm auth:cleanup` deletes them after a day.
  */
 import { loadDatabaseConfig } from "@finvoice/config";
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -19,19 +19,16 @@ const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const users = [
   {
     id: "00000000-0000-7000-8000-000000000001",
-    phoneNumber: "+94000000001",
     displayName: "Demo User (Sinhala)",
     preferredLanguage: "SI",
   },
   {
     id: "00000000-0000-7000-8000-000000000002",
-    phoneNumber: "+94000000002",
     displayName: "Demo User (Tamil)",
     preferredLanguage: "TA",
   },
   {
     id: "00000000-0000-7000-8000-000000000003",
-    phoneNumber: "+94000000003",
     displayName: "Demo User (English)",
     preferredLanguage: "EN",
   },

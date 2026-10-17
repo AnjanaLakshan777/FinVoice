@@ -1,15 +1,8 @@
 import { z } from "zod";
 
-import {
-  authEnvShape,
-  checkAuthEnv,
-  devOtpProviderEnvIssues,
-  toAuthConfig,
-  type AuthConfig,
-} from "./auth.js";
+import { authEnvShape, checkAuthEnv, toAuthConfig, type AuthConfig } from "./auth.js";
 import { databaseEnvSchema } from "./database.js";
 import {
-  ConfigValidationError,
   geminiModelSchema,
   hostSchema,
   internalApiTokenSchema,
@@ -78,17 +71,11 @@ export type ApiConfig = {
     /** Analytics events older than this many days are deleted by the cleanup command. */
     retentionDays: number;
   };
-  /** Contains credentials (`jwtSecret`, `otpPepper`, `otp.devCode`). */
+  /** Contains a credential (`jwtSecret`). */
   auth: AuthConfig;
 };
 
 export function loadApiConfig(env: RawEnv = process.env): ApiConfig {
-  // The development OTP provider is checked on the raw values first, so neither an unset NODE_ENV
-  // (defaulted to "development" by the schema) nor any other value can enable it.
-  const devProviderIssues = devOtpProviderEnvIssues(env);
-  if (devProviderIssues.length > 0) {
-    throw new ConfigValidationError(devProviderIssues.join("\n"));
-  }
   const parsed = parseEnv(apiEnvSchema, env);
   return {
     nodeEnv: parsed.NODE_ENV,

@@ -27,6 +27,7 @@ describe("database migrations", () => {
       "20260927220000_analytics_events",
       "20260928063800_authentication",
       "20260928113730_refresh_grace",
+      "20261018120000_guest_accounts",
     ]);
 
     const status = runPrisma(["migrate", "status"], databaseUrl);
@@ -67,7 +68,6 @@ describe("database migrations", () => {
     expect(constraints.map((row) => row.name).sort()).toEqual(
       [
         "users_pkey",
-        "users_phone_number_e164_check",
         "users_display_name_not_blank_check",
         "users_timezone_not_blank_check",
         "financial_profiles_pkey",
@@ -138,7 +138,7 @@ describe("database migrations", () => {
     expect(indexes.map((row) => row.name).sort()).toEqual(
       [
         "users_pkey",
-        "users_phone_number_key",
+        "users_created_at_idx",
         "financial_profiles_pkey",
         "financial_profiles_user_id_key",
         "financial_goals_pkey",
@@ -252,26 +252,22 @@ describe("database migrations", () => {
       GROUP BY t.typname`;
     const constraints = await prisma.$queryRaw<{ name: string }[]>`
       SELECT conname AS name FROM pg_constraint
-      WHERE conrelid IN ('otp_challenges'::regclass, 'auth_sessions'::regclass)
-        AND contype IN ('p', 'f', 'c')`;
+      WHERE conrelid = 'auth_sessions'::regclass AND contype IN ('p', 'f', 'c')`;
     const indexes = await prisma.$queryRaw<{ name: string }[]>`
       SELECT indexname AS name FROM pg_indexes
-      WHERE schemaname = 'public' AND tablename IN ('otp_challenges', 'auth_sessions')`;
+      WHERE schemaname = 'public' AND tablename = 'auth_sessions'`;
     const columns = await prisma.$queryRaw<{ name: string }[]>`
       SELECT table_name || '.' || column_name AS name FROM information_schema.columns
-      WHERE table_schema = 'public' AND table_name IN ('otp_challenges', 'auth_sessions')`;
+      WHERE table_schema = 'public' AND table_name = 'auth_sessions'`;
+    const removed = await prisma.$queryRaw<{ name: string }[]>`
+      SELECT table_name || '.' || coalesce(column_name, '') AS name FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND (table_name = 'otp_challenges' OR (table_name = 'users' AND column_name = 'phone_number'))`;
 
     expect(role).toEqual({ type: "user_role", nullable: "NO", fallback: "'USER'::user_role" });
     expect(enums).toEqual([{ name: "user_role", values: "USER,ADMIN" }]);
     expect(constraints.map((row) => row.name).sort()).toEqual(
       [
-        "otp_challenges_pkey",
-        "otp_challenges_phone_number_e164_check",
-        "otp_challenges_code_hash_format_check",
-        "otp_challenges_max_attempts_range_check",
-        "otp_challenges_attempts_range_check",
-        "otp_challenges_expires_after_created_check",
-        "otp_challenges_single_outcome_check",
         "auth_sessions_pkey",
         "auth_sessions_user_id_fkey",
         "auth_sessions_refresh_token_hash_format_check",
@@ -282,9 +278,6 @@ describe("database migrations", () => {
     );
     expect(indexes.map((row) => row.name).sort()).toEqual(
       [
-        "otp_challenges_pkey",
-        "otp_challenges_phone_number_created_at_idx",
-        "otp_challenges_expires_at_idx",
         "auth_sessions_pkey",
         "auth_sessions_refresh_token_hash_key",
         "auth_sessions_user_id_idx",
@@ -292,18 +285,9 @@ describe("database migrations", () => {
         "auth_sessions_expires_at_idx",
       ].sort(),
     );
-    // Hashes only: no plaintext code or token, no message, no IP address, no user agent.
+    // Hashes only: no plaintext token, no IP address, no user agent.
     expect(columns.map((row) => row.name).sort()).toEqual(
       [
-        "otp_challenges.id",
-        "otp_challenges.phone_number",
-        "otp_challenges.code_hash",
-        "otp_challenges.expires_at",
-        "otp_challenges.attempts",
-        "otp_challenges.max_attempts",
-        "otp_challenges.created_at",
-        "otp_challenges.consumed_at",
-        "otp_challenges.superseded_at",
         "auth_sessions.id",
         "auth_sessions.user_id",
         "auth_sessions.refresh_token_hash",
@@ -316,6 +300,8 @@ describe("database migrations", () => {
         "auth_sessions.created_at",
       ].sort(),
     );
+    // Guest accounts: no phone numbers and no OTP challenges are stored any more.
+    expect(removed).toEqual([]);
   });
 
   it("initialises the database with UTF-8 encoding and ICU collation", async () => {

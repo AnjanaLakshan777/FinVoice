@@ -24,12 +24,12 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await truncateAllTables(api.prisma);
-  userId = await createUser("+94000000401");
-  otherUserId = await createUser("+94000000402");
+  userId = await createUser();
+  otherUserId = await createUser();
 });
 
-async function createUser(phoneNumber: string): Promise<string> {
-  const user = await api.prisma.user.create({ data: { phoneNumber, preferredLanguage: "SI" } });
+async function createUser(): Promise<string> {
+  const user = await api.prisma.user.create({ data: { preferredLanguage: "SI" } });
   return user.id;
 }
 

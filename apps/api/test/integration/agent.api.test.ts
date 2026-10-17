@@ -6,7 +6,7 @@ import {
 } from "@finvoice/finance-engine";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
 
-import { buildSystemInstruction } from "../../src/ai/agent/agent.prompt.js";
+import { AGENT_VERSION, buildSystemInstruction } from "../../src/ai/agent/agent.prompt.js";
 import { TOOL_LIMIT_MESSAGE } from "../../src/ai/agent/agent.service.js";
 import { LanguageModelError, type ModelToolResult } from "../../src/ai/model/language-model.js";
 import { KNOWLEDGE_GUIDANCE, REVIEW_REQUIRED_NOTE } from "../../src/ai/tools/knowledge.tools.js";
@@ -76,7 +76,7 @@ describe("POST /api/v1/agent/chat: basics", () => {
     expect(response.body).toEqual({
       message: "An emergency fund is money kept aside for sudden costs.",
       language: "EN",
-      agentVersion: "1",
+      agentVersion: AGENT_VERSION,
       usedTools: [],
     });
     expect(model.requests[0]?.userMessage).toBe("What is an emergency fund?");

@@ -5,88 +5,46 @@ import {
   AUTH_ERROR_MESSAGES,
   noQuerySchema,
   ownFinancialGoalParamsSchema,
-  requestOtpRequestSchema,
+  startGuestSessionRequestSchema,
   updateUserRequestSchema,
   USER_ROLES,
-  verifyOtpRequestSchema,
 } from "../src/index.js";
 
-const CHALLENGE_ID = "5d3c2f0e-8f7a-4b1e-9c6d-2a1b0c9d8e7f";
+const SOME_ID = "5d3c2f0e-8f7a-4b1e-9c6d-2a1b0c9d8e7f";
 
-describe("requestOtpRequestSchema", () => {
-  it("accepts an E.164 phone number", () => {
-    expect(requestOtpRequestSchema.parse({ phoneNumber: "+94771234567" })).toEqual({
-      phoneNumber: "+94771234567",
-    });
-  });
-
-  it.each(["0771234567", "+94 77 123 4567", " +94771234567", "+94771234567 "])(
-    "rejects %j instead of normalising it",
-    (phoneNumber) => {
-      expect(requestOtpRequestSchema.safeParse({ phoneNumber }).success).toBe(false);
-    },
-  );
-
-  it.each([{ role: "ADMIN" }, { userId: CHALLENGE_ID }, { code: "12345678" }])(
-    "rejects the extra property %j",
-    (extra) => {
-      expect(
-        requestOtpRequestSchema.safeParse({ phoneNumber: "+94771234567", ...extra }).success,
-      ).toBe(false);
-    },
-  );
-});
-
-describe("verifyOtpRequestSchema", () => {
-  it("accepts a challenge, a code and the optional registration fields", () => {
-    expect(
-      verifyOtpRequestSchema.parse({
-        challengeId: CHALLENGE_ID,
-        code: "00012345",
-        displayName: "  Kamal ",
-        preferredLanguage: "SI",
-      }),
-    ).toEqual({
-      challengeId: CHALLENGE_ID,
-      code: "00012345",
-      displayName: "Kamal",
+describe("startGuestSessionRequestSchema", () => {
+  it("accepts a preferred language and an optional display name", () => {
+    expect(startGuestSessionRequestSchema.parse({ preferredLanguage: "SI" })).toEqual({
       preferredLanguage: "SI",
     });
+    expect(
+      startGuestSessionRequestSchema.parse({ preferredLanguage: "TA", displayName: "  Kamal " }),
+    ).toEqual({ preferredLanguage: "TA", displayName: "Kamal" });
+    expect(
+      startGuestSessionRequestSchema.parse({ preferredLanguage: "EN", displayName: "   " })
+        .displayName,
+    ).toBeNull();
   });
 
-  it.each([
-    "1234567",
-    "123456789",
-    "1234 5678",
-    "12345678 ",
-    "abcdefgh",
-    "１２３４５６７８",
-    12345678,
-  ])("rejects the code %j", (code) => {
-    expect(verifyOtpRequestSchema.safeParse({ challengeId: CHALLENGE_ID, code }).success).toBe(
-      false,
-    );
-  });
+  it.each([{}, { preferredLanguage: "FR" }, { preferredLanguage: "si" }])(
+    "requires a supported language: %j",
+    (body) => {
+      expect(startGuestSessionRequestSchema.safeParse(body).success).toBe(false);
+    },
+  );
 
   it.each([
     { role: "ADMIN" },
     { status: "ACTIVE" },
-    { userId: CHALLENGE_ID },
-    { sessionId: CHALLENGE_ID },
+    { userId: SOME_ID },
+    { sessionId: SOME_ID },
     { accessToken: "x" },
     { refreshToken: "x" },
     { phoneNumber: "+94771234567" },
   ])("never lets the client choose %j", (extra) => {
     expect(
-      verifyOtpRequestSchema.safeParse({ challengeId: CHALLENGE_ID, code: "12345678", ...extra })
-        .success,
+      startGuestSessionRequestSchema.safeParse({ preferredLanguage: "SI", ...extra }).success,
     ).toBe(false);
-  });
-
-  it("requires a UUID challenge id", () => {
-    expect(verifyOtpRequestSchema.safeParse({ challengeId: "x", code: "12345678" }).success).toBe(
-      false,
-    );
   });
 });
 
@@ -107,11 +65,10 @@ describe("user self-service updates", () => {
 describe("/me parameters", () => {
   it("take no query parameters and no user id", () => {
     expect(noQuerySchema.safeParse({}).success).toBe(true);
-    expect(noQuerySchema.safeParse({ userId: CHALLENGE_ID }).success).toBe(false);
-    expect(ownFinancialGoalParamsSchema.safeParse({ goalId: CHALLENGE_ID }).success).toBe(true);
+    expect(noQuerySchema.safeParse({ userId: SOME_ID }).success).toBe(false);
+    expect(ownFinancialGoalParamsSchema.safeParse({ goalId: SOME_ID }).success).toBe(true);
     expect(
-      ownFinancialGoalParamsSchema.safeParse({ goalId: CHALLENGE_ID, userId: CHALLENGE_ID })
-        .success,
+      ownFinancialGoalParamsSchema.safeParse({ goalId: SOME_ID, userId: SOME_ID }).success,
     ).toBe(false);
   });
 });
@@ -119,21 +76,12 @@ describe("/me parameters", () => {
 describe("authentication error messages", () => {
   it("are fixed: clients (the web app) rely on them", () => {
     expect(AUTH_ERROR_MESSAGES).toEqual({
-      invalidCode: "The verification code is invalid or has expired",
       authenticationFailed: "Authentication failed",
       invalidRefreshToken: "Invalid or expired refresh token",
       invalidAccessToken: "Missing or invalid access token",
-      tooManyOtpRequests: "Too many verification code requests. Try again later.",
-      otpDeliveryFailed: "The verification code could not be sent. Try again later.",
-      otpDeliveryNotConfigured: "Verification code delivery is not configured",
+      tooManyGuestSessions: "FinVoice is busy. Try again in a minute.",
       notConfigured: "Authentication is not configured",
     });
-  });
-
-  it("never say whether a phone number is registered", () => {
-    for (const message of Object.values(AUTH_ERROR_MESSAGES)) {
-      expect(message).not.toMatch(/regist|not found|exist|unknown (user|number)/iu);
-    }
   });
 });
 

@@ -117,13 +117,13 @@ The backend calculation engine—not the language model—is authoritative for c
 
 ### 👤 Profiles and financial goals
 
-- Phone-based OTP authentication.
+- Guest accounts: start with only a preferred language (no phone number, code or password).
 - User profile and preferred language.
 - Monthly income and expense profile.
 - Savings, emergency fund, and debt-repayment goals.
 - Goal progress and protected user-specific APIs.
 
-A real production SMS provider is still required before public OTP sign-in is production-ready.
+FinVoice stores no phone numbers. A guest account lives in one browser, and logging out deletes it with its data.
 
 ### 📊 Analytics and administration
 
@@ -137,7 +137,7 @@ A real production SMS provider is still required before public OTP sign-in is pr
 
 - Protected internal APIs.
 - Role and ownership checks.
-- Hashed OTP challenges and refresh tokens.
+- Hashed refresh tokens; no phone numbers or passwords stored.
 - Server-side AI credentials.
 - No raw call recording or transcript persistence by default.
 - Financial and scam logic separated from AI-generated language.
@@ -210,16 +210,16 @@ flowchart TB
 
 ### Main components
 
-| Component | Responsibility |
-|---|---|
-| `apps/web` | Next.js web interface, authentication, onboarding, goals, and browser experience |
-| `apps/api` | NestJS REST APIs, authentication, user domain, trusted tools, knowledge, calculations, analytics |
-| `apps/voice-gateway` | Realtime voice sessions and Gemini Live integration; planned phone-audio adapter |
-| `packages/finance-engine` | Framework-independent deterministic financial calculations |
-| `packages/contracts` | Shared API contracts and validation schemas |
-| `packages/shared` | Shared types and utilities |
-| `packages/config` | Shared configuration and project conventions |
-| PostgreSQL + Prisma | Persistent domain data, knowledge content, authentication state, and analytics |
+| Component                 | Responsibility                                                                                   |
+| ------------------------- | ------------------------------------------------------------------------------------------------ |
+| `apps/web`                | Next.js web interface, authentication, onboarding, goals, and browser experience                 |
+| `apps/api`                | NestJS REST APIs, authentication, user domain, trusted tools, knowledge, calculations, analytics |
+| `apps/voice-gateway`      | Realtime voice sessions and Gemini Live integration; planned phone-audio adapter                 |
+| `packages/finance-engine` | Framework-independent deterministic financial calculations                                       |
+| `packages/contracts`      | Shared API contracts and validation schemas                                                      |
+| `packages/shared`         | Shared types and utilities                                                                       |
+| `packages/config`         | Shared configuration and project conventions                                                     |
+| PostgreSQL + Prisma       | Persistent domain data, knowledge content, authentication state, and analytics                   |
 
 The exact directory and package names should be confirmed against the current repository before making code changes.
 
@@ -297,13 +297,13 @@ FinVoice/
 
 ### Prerequisites
 
-| Requirement | Purpose |
-|---|---|
-| Node.js 24 | API, web, voice gateway, and tooling |
-| pnpm | Monorepo package management |
-| Docker Desktop | Local PostgreSQL service |
-| Git | Version control |
-| Gemini API credentials | AI agent and voice functionality |
+| Requirement               | Purpose                                     |
+| ------------------------- | ------------------------------------------- |
+| Node.js 24                | API, web, voice gateway, and tooling        |
+| pnpm                      | Monorepo package management                 |
+| Docker Desktop            | Local PostgreSQL service                    |
+| Git                       | Version control                             |
+| Gemini API credentials    | AI agent and voice functionality            |
 | SIP/telephony credentials | Required only when testing real phone calls |
 
 Use the repository's `.nvmrc` and package-manager configuration where available. Confirm versions from the repository before installing or upgrading tools.
@@ -315,7 +315,7 @@ Use the repository's `.nvmrc` and package-manager configuration where available.
 3. Keep secrets out of source control and frontend bundles.
 4. Never paste secrets into logs, screenshots, prompts, or documentation.
 
-Configuration categories may include PostgreSQL, Gemini, internal API/voice-gateway authentication, OTP/session settings, admin access, and optional telephony/SIP/Asterisk settings. Use the exact variable names defined by `.env.example` and the configuration code; do not assume names from this README.
+Configuration categories may include PostgreSQL, Gemini, internal API/voice-gateway authentication, session settings, admin access, and optional telephony/SIP/Asterisk settings. Use the exact variable names defined by `.env.example` and the configuration code; do not assume names from this README.
 
 > **Never commit real credentials.** Keep API keys server-side. Use development-only credentials locally and rotate any secret that may have been exposed.
 
@@ -397,8 +397,7 @@ The current API includes authentication and current-user profile, financial prof
 Representative routes reported as implemented include:
 
 ```text
-POST   /api/v1/auth/request-otp
-POST   /api/v1/auth/verify-otp
+POST   /api/v1/auth/guest
 POST   /api/v1/auth/refresh
 POST   /api/v1/auth/logout
 GET    /api/v1/auth/me

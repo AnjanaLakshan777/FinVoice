@@ -24,6 +24,7 @@ export default function ProtectedLayout({ children }: Readonly<{ children: React
   const router = useRouter();
   const pathname = usePathname();
   const [signingOut, setSigningOut] = useState(false);
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
 
   useEffect(() => {
     if (state.status === "unauthenticated") {
@@ -57,13 +58,42 @@ export default function ProtectedLayout({ children }: Readonly<{ children: React
           <button
             className={styles.secondary}
             type="button"
-            disabled={signingOut}
-            onClick={() => void onSignOut()}
+            disabled={signingOut || confirmingLogout}
+            onClick={() => {
+              setConfirmingLogout(true);
+            }}
           >
             Log out
           </button>
         </span>
       </nav>
+      {confirmingLogout && (
+        <div className={styles.notice} role="alertdialog" aria-labelledby="logout-warning">
+          <p id="logout-warning">
+            Logging out deletes your details and goals from FinVoice. You cannot get them back.
+          </p>
+          <div className={styles.actions}>
+            <button
+              className={styles.primary}
+              type="button"
+              disabled={signingOut}
+              onClick={() => void onSignOut()}
+            >
+              Delete my data and log out
+            </button>
+            <button
+              className={styles.secondary}
+              type="button"
+              disabled={signingOut}
+              onClick={() => {
+                setConfirmingLogout(false);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       {children}
     </>
   );

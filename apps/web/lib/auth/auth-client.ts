@@ -4,8 +4,7 @@ import type {
   AuthMeResponse,
   AuthTokenResponse,
   AuthUser,
-  Language,
-  RequestOtpResponse,
+  StartGuestSessionRequest,
 } from "@finvoice/contracts";
 
 /**
@@ -46,15 +45,6 @@ export class SessionExpiredError extends Error {
     this.name = "SessionExpiredError";
   }
 }
-
-export type VerifyOtpInput = {
-  challengeId: string;
-  code: string;
-  /** Used by the API only if this sign-in creates the account. */
-  displayName?: string;
-  /** Used by the API only if this sign-in creates the account. */
-  preferredLanguage?: Language;
-};
 
 /** Why the signed-in session ended: the user logged out, or it could not be renewed. */
 export type SessionEndReason = "logout" | "expired";
@@ -103,16 +93,13 @@ export class AuthClient {
     };
   }
 
-  /** Starts a sign-in: the API sends a code to the phone. The code never reaches this client. */
-  requestOtp(phoneNumber: string): Promise<RequestOtpResponse> {
-    return this.#send<RequestOtpResponse>("POST", "/auth/request-otp", { body: { phoneNumber } });
-  }
-
-  /** Completes a sign-in. The API sets the refresh cookie; the access token stays in memory. */
-  async verifyOtp(input: VerifyOtpInput): Promise<AuthUser> {
-    const response = await this.#send<AuthTokenResponse>("POST", "/auth/verify-otp", {
-      body: input,
-    });
+  /**
+   * Starts a guest session: the API creates a new account from the preferred language (and an
+   * optional name) and sets the refresh cookie; the access token stays in memory. No phone number,
+   * code or password.
+   */
+  async startGuestSession(input: StartGuestSessionRequest): Promise<AuthUser> {
+    const response = await this.#send<AuthTokenResponse>("POST", "/auth/guest", { body: input });
     this.#accessToken = response.accessToken;
     return response.user;
   }
@@ -150,8 +137,10 @@ export class AuthClient {
   }
 
   /**
-   * Signs out: the API revokes this sign-in's refresh tokens and clears the cookie. The in-memory
-   * token is dropped even if the API cannot be reached. JavaScript never touches the cookie.
+   * Logs out: the API deletes the guest account with all of its data and clears the cookie. The
+   * in-memory token is dropped even if the API cannot be reached (the account is then deleted later
+   * by the server's cleanup, because nobody can sign in to it any more). JavaScript never touches
+   * the cookie.
    */
   async logout(): Promise<void> {
     try {

@@ -1,17 +1,14 @@
 import { z } from "zod";
 
-import { uuidSchema } from "./common.js";
-import {
-  displayNameSchema,
-  languageSchema,
-  phoneNumberSchema,
-  type Language,
-  type UserStatus,
-} from "./users.js";
+import { displayNameSchema, languageSchema, type Language, type UserStatus } from "./users.js";
 
 /**
- * Contracts of phone-OTP authentication (Step 11): /api/v1/auth/*. See
+ * Contracts of guest authentication: /api/v1/auth/*. See
  * docs/architecture/authentication-authorization.md.
+ *
+ * There are no phone numbers, codes or passwords. Starting a guest session creates a new account
+ * from a preferred language (and an optional name) and signs it in; the account is reachable only
+ * through that browser's refresh cookie, and logging out deletes it.
  *
  * The client never chooses its identity, role, status or session: every schema is strict, so
  * fields such as `role`, `status`, `userId`, `sessionId`, `accessToken` or `refreshToken` are
@@ -21,38 +18,14 @@ import {
 export const USER_ROLES = ["USER", "ADMIN"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
-/** OTP codes are exactly 8 digits. */
-export const OTP_CODE_LENGTH = 8;
-
-export const requestOtpRequestSchema = z.strictObject({ phoneNumber: phoneNumberSchema });
-export type RequestOtpRequest = z.output<typeof requestOtpRequestSchema>;
-
-/** The same answer whether or not the number has an account (no account enumeration). */
-export const REQUEST_OTP_MESSAGE =
-  "If this number can be authenticated, a verification code has been requested.";
-
-export type RequestOtpResponse = {
-  /** Identifies the challenge to verify. Not a secret, and not a credential on its own. */
-  challengeId: string;
-  /** Seconds until the code expires. */
-  expiresIn: number;
-  message: typeof REQUEST_OTP_MESSAGE;
-};
-
-export const verifyOtpRequestSchema = z.strictObject({
-  challengeId: uuidSchema,
-  code: z.string({ error: "Must be a string" }).regex(/^[0-9]{8}$/, {
-    error: "Must be exactly 8 digits",
-  }),
-  /** Used only when this sign-in creates the account; ignored for an existing user. */
+export const startGuestSessionRequestSchema = z.strictObject({
+  preferredLanguage: languageSchema,
   displayName: displayNameSchema.optional(),
-  /** Used only when this sign-in creates the account (default EN); ignored for an existing user. */
-  preferredLanguage: languageSchema.optional(),
 });
-export type VerifyOtpRequest = z.input<typeof verifyOtpRequestSchema>;
-export type VerifyOtpCommand = z.output<typeof verifyOtpRequestSchema>;
+export type StartGuestSessionRequest = z.input<typeof startGuestSessionRequestSchema>;
+export type StartGuestSessionCommand = z.output<typeof startGuestSessionRequestSchema>;
 
-/** Minimal identity of the signed-in user: no phone number, no financial data. */
+/** Minimal identity of the signed-in user: no financial data. */
 export type AuthUser = {
   id: string;
   preferredLanguage: Language;
@@ -61,8 +34,8 @@ export type AuthUser = {
 };
 
 /**
- * Returned by verify-otp and refresh. The refresh token is NOT in the body: it is set as an
- * HttpOnly cookie (AUTH_REFRESH_COOKIE_NAME, Path=/api/v1/auth).
+ * Returned by guest and refresh. The refresh token is NOT in the body: it is set as an HttpOnly
+ * cookie (AUTH_REFRESH_COOKIE_NAME, Path=/api/v1/auth).
  */
 export type AuthTokenResponse = {
   accessToken: string;
@@ -76,25 +49,17 @@ export type AuthMeResponse = AuthUser & { status: UserStatus };
 
 /**
  * The exact `message` of each authentication error, shared so clients can react to them without
- * copying strings. They are deliberately generic: every wrong, expired, used, superseded or
- * exhausted code gives the same `invalidCode` answer (no enumeration), and only someone who has
- * just proved possession of the phone sees `authenticationFailed` (an account that may not sign in).
+ * copying strings.
  */
 export const AUTH_ERROR_MESSAGES = {
-  /** 401 from verify-otp: any code or challenge failure. */
-  invalidCode: "The verification code is invalid or has expired",
-  /** 401 from verify-otp (correct code, inactive account) and /auth/me. */
+  /** 401 from /auth/me: the account no longer exists or may not sign in. */
   authenticationFailed: "Authentication failed",
   /** 401 from refresh: missing, unknown, expired, reused or revoked refresh token. */
   invalidRefreshToken: "Invalid or expired refresh token",
   /** 401 from any protected route: missing or invalid access token. */
   invalidAccessToken: "Missing or invalid access token",
-  /** 429 from request-otp: per-number request limit reached. */
-  tooManyOtpRequests: "Too many verification code requests. Try again later.",
-  /** 503 from request-otp: the delivery provider failed. */
-  otpDeliveryFailed: "The verification code could not be sent. Try again later.",
-  /** 503 from request-otp: no delivery provider configured. */
-  otpDeliveryNotConfigured: "Verification code delivery is not configured",
-  /** 503 from sign-in and protected routes: the auth secrets are not configured. */
+  /** 429 from guest: too many accounts were created recently (all clients together). */
+  tooManyGuestSessions: "FinVoice is busy. Try again in a minute.",
+  /** 503 from sign-in and protected routes: the auth secret is not configured. */
   notConfigured: "Authentication is not configured",
 } as const;

@@ -4,28 +4,20 @@ import { AUTH_API_MESSAGES } from "./constants";
 /**
  * Simple, safe messages for the person using the app. Raw API messages are never shown for
  * failures (only field-level validation messages, which the API writes for end users), and nothing
- * here reveals codes, tokens or internal details.
+ * here reveals tokens or internal details.
  */
 export const MESSAGES = {
-  invalidPhone: "Enter your mobile number in international format, for example +94771234567.",
-  invalidCodeFormat: "Enter the 8-digit code from your message.",
-  codeIncorrect: "That code is not correct, or it has expired. Check it, or send a new code.",
-  codeExpired: "This code has expired. Send a new code to continue.",
-  tooManyAttempts: "Too many incorrect attempts. Send a new code to try again.",
-  tooManyRequests:
-    "Too many codes have been requested for this number. Please wait 15 minutes and try again.",
-  accountInactive: "This account cannot sign in. Please contact FinVoice support.",
-  sessionExpired: "Your session has ended. Please sign in again.",
+  tooManyRequests: "FinVoice is busy right now. Please wait a minute and try again.",
+  accountInactive: "This account cannot be used. Please start again.",
+  sessionExpired: "Your session has ended. Please start again.",
   validation: "Some details need attention. Please check the fields below.",
   unavailable: "FinVoice is not available right now. Please try again in a few minutes.",
   notFound: "We could not find that.",
   unexpected: "Something went wrong. Please try again.",
 } as const;
 
-export type MessageContext = "requestOtp" | "verifyOtp" | "account";
-
 /** One friendly message for any failure of an API call. */
-export function friendlyError(error: unknown, context: MessageContext = "account"): string {
+export function friendlyError(error: unknown): string {
   if (error instanceof SessionExpiredError) {
     return MESSAGES.sessionExpired;
   }
@@ -39,19 +31,12 @@ export function friendlyError(error: unknown, context: MessageContext = "account
     return MESSAGES.tooManyRequests;
   }
   if (error.status === 400) {
-    if (context === "requestOtp") {
-      return MESSAGES.invalidPhone;
-    }
-    if (context === "verifyOtp") {
-      return MESSAGES.invalidCodeFormat;
-    }
     return MESSAGES.validation;
   }
   if (error.status === 401) {
-    if (error.message === AUTH_API_MESSAGES.authenticationFailed) {
-      return MESSAGES.accountInactive;
-    }
-    return context === "verifyOtp" ? MESSAGES.codeIncorrect : MESSAGES.sessionExpired;
+    return error.message === AUTH_API_MESSAGES.authenticationFailed
+      ? MESSAGES.accountInactive
+      : MESSAGES.sessionExpired;
   }
   if (error.status === 404) {
     return MESSAGES.notFound;

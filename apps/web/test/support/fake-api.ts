@@ -74,7 +74,6 @@ export const ME: AuthMeResponse = {
 
 export const USER: UserResponse = {
   id: USER_ID,
-  phoneNumber: "+94000000001",
   displayName: "Kamal",
   preferredLanguage: "SI",
   timezone: "Asia/Colombo",

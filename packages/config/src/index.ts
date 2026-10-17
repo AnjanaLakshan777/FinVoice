@@ -13,15 +13,7 @@ export {
   type ApiConfig,
 } from "./api.js";
 export { loadAdminDashboardConfig, type AdminDashboardConfig } from "./admin-dashboard.js";
-export {
-  AUTH_SECRET_MIN_LENGTH,
-  DEFAULT_AUTH,
-  DEV_OTP_PROVIDER_ENVIRONMENTS,
-  isDevOtpProviderEnvironment,
-  OTP_PROVIDERS,
-  type AuthConfig,
-  type OtpProviderName,
-} from "./auth.js";
+export { AUTH_SECRET_MIN_LENGTH, DEFAULT_AUTH, type AuthConfig } from "./auth.js";
 export { loadDatabaseConfig, type DatabaseConfig } from "./database.js";
 export {
   DEFAULT_GEMINI_LIVE_MODEL,

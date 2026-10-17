@@ -4,7 +4,7 @@ The FinVoice backend API for users, financial profiles, financial goals, financi
 
 **The API is authoritative.** Every rule below is enforced by the backend (request validation, then service checks, then database constraints), whatever a client, voice flow or AI model has already checked. Clients may propose values; the API decides what is stored.
 
-> **Authentication (Step 11).** Personal data requires a signed-in user. Sign-in is by phone number and a one-time code; every request then carries `Authorization: Bearer <access token>`. Each user can reach only their own data, and admin operations need the `ADMIN` role. Real SMS delivery is **not implemented yet**: sign-in works locally with the development OTP provider only. See [authentication-authorization.md](../architecture/authentication-authorization.md).
+> **Authentication (Step 11).** Personal data requires a signed-in user. Sign-in creates a guest account from a preferred language only (no phone number, code or password); every request then carries `Authorization: Bearer <access token>`. Each user can reach only their own data, and admin operations need the `ADMIN` role. Logging out deletes the guest account. See [authentication-authorization.md](../architecture/authentication-authorization.md).
 
 ## Basics
 
@@ -29,10 +29,9 @@ Access:
 
 | Method  | Path                               | Access | Success | Purpose                                          |
 | ------- | ---------------------------------- | ------ | ------- | ------------------------------------------------ |
-| `POST`  | `/auth/request-otp`                | Public | 202     | Request a sign-in code for a phone number        |
-| `POST`  | `/auth/verify-otp`                 | Public | 200     | Sign in (or sign up) with the code               |
+| `POST`  | `/auth/guest`                      | Public | 201     | Create a guest account and sign it in            |
 | `POST`  | `/auth/refresh`                    | Cookie | 200     | Rotate the refresh token, get a new access token |
-| `POST`  | `/auth/logout`                     | User   | 204     | Sign out this device                             |
+| `POST`  | `/auth/logout`                     | User   | 204     | Delete the guest account and sign out            |
 | `GET`   | `/auth/me`                         | User   | 200     | Minimal identity of the signed-in user           |
 | `GET`   | `/me`                              | User   | 200     | Own user record                                  |
 | `PATCH` | `/me`                              | User   | 200     | Change own display name or language              |
@@ -74,45 +73,20 @@ Every route that is not listed as Public needs credentials, including routes add
 
 ## Authentication
 
-Sign-in is passwordless: phone number, then an 8-digit one-time code. Browsers reach these routes through the web app's own origin (`https://<web>/api/v1/...`, a same-origin proxy), so the refresh cookie stays first-party and HttpOnly; see [web-authentication.md](../architecture/web-authentication.md). For the security design see [authentication-authorization.md](../architecture/authentication-authorization.md).
+Sign-in uses **guest accounts**: a preferred language (and an optional name) is all it takes. There are no phone numbers, codes or passwords. Browsers reach these routes through the web app's own origin (`https://<web>/api/v1/...`, a same-origin proxy), so the refresh cookie stays first-party and HttpOnly; see [web-authentication.md](../architecture/web-authentication.md). For the security design see [authentication-authorization.md](../architecture/authentication-authorization.md).
 
-### `POST /auth/request-otp`
-
-```json
-{ "phoneNumber": "+94771234567" }
-```
-
-`202 Accepted`, with the same answer whether or not the number has an account:
+### `POST /auth/guest`
 
 ```json
-{
-  "challengeId": "5d3c2f0e-8f7a-4b1e-9c6d-2a1b0c9d8e7f",
-  "expiresIn": 300,
-  "message": "If this number can be authenticated, a verification code has been requested."
-}
+{ "preferredLanguage": "SI", "displayName": "Kamal" }
 ```
 
-The code is delivered to the phone, never in the response. Requesting a new code invalidates the previous one. More than 3 requests for one number within 15 minutes get `429 TOO_MANY_REQUESTS`. A malformed number gets `400` (it is not normalised). Without a delivery provider (currently the case in production: no SMS provider yet) the answer is `503`.
+| Field               | Rules                                                                        |
+| ------------------- | ---------------------------------------------------------------------------- |
+| `preferredLanguage` | Required. `SI`, `TA` or `EN`                                                 |
+| `displayName`       | Optional string or null, trimmed, at most 100 characters. Blank means `null` |
 
-### `POST /auth/verify-otp`
-
-```json
-{
-  "challengeId": "5d3c2f0e-…",
-  "code": "12345678",
-  "displayName": "Kamal",
-  "preferredLanguage": "SI"
-}
-```
-
-| Field               | Rules                                                                                   |
-| ------------------- | --------------------------------------------------------------------------------------- |
-| `challengeId`       | Required UUID from `request-otp`                                                        |
-| `code`              | Required string of exactly 8 digits, no spaces                                          |
-| `displayName`       | Optional; used only if this sign-in creates the account                                 |
-| `preferredLanguage` | Optional `SI`, `TA`, `EN` (default `EN`); used only if this sign-in creates the account |
-
-Any other field (`role`, `status`, `userId`, `sessionId`, `accessToken`, `refreshToken`, `phoneNumber` …) is rejected with `400`. On success, `200`:
+The body must be JSON (`content-type: application/json`); anything else gets `415 UNSUPPORTED_MEDIA_TYPE`. Any other field (`role`, `status`, `userId`, `sessionId`, `accessToken`, `refreshToken`, `phoneNumber` …) is rejected with `400`. Every call creates a **new** account (`USER`, `ACTIVE`). `201 Created`:
 
 ```json
 {
@@ -128,26 +102,23 @@ Any other field (`role`, `status`, `userId`, `sessionId`, `accessToken`, `refres
 }
 ```
 
-The refresh token is set as a cookie and is **not** in the body: `Set-Cookie: finvoice_refresh=…; Max-Age=2592000; Path=/api/v1/auth; HttpOnly; SameSite=Lax` (plus `Secure` in production). An unknown number becomes a new `USER` account. A known number signs in the existing account without changing it.
+The refresh token is set as a cookie and is **not** in the body: `Set-Cookie: finvoice_refresh=…; Max-Age=2592000; Path=/api/v1/auth; HttpOnly; SameSite=Lax` (plus `Secure` in production). The cookie is the only way back into the account.
 
-**Failures:**
-
-- `401 "The verification code is invalid or has expired"`: wrong, expired, used or superseded code, too many attempts (5 per code; after that even the right code fails), or unknown challenge. All of these look the same.
-- `401 "Authentication failed"`: an inactive account.
+**Failures:** `429 TOO_MANY_REQUESTS "FinVoice is busy. Try again in a minute."` when more than `AUTH_GUEST_SESSION_LIMIT` (default 30) accounts were created in the last `AUTH_GUEST_SESSION_WINDOW_SECONDS` (default 60), by all clients together; `503` when authentication is not configured.
 
 ### `POST /auth/refresh`
 
-No body, no access token: the credential is the `finvoice_refresh` cookie. The answer is `200` with the same body as `verify-otp`, and a **new** cookie. The old refresh token stops working immediately. Presenting an already-used refresh token revokes that whole sign-in (the token family), including its newest token. Missing, unknown, expired, reused or revoked tokens and inactive users get `401 "Invalid or expired refresh token"`, and the cookie is cleared.
+No body, no access token: the credential is the `finvoice_refresh` cookie. The answer is `200` with the same body as `guest`, and a **new** cookie. The old refresh token stops working immediately. Presenting an already-used refresh token revokes that whole sign-in (the token family), including its newest token. Missing, unknown, expired, reused or revoked tokens and inactive users get `401 "Invalid or expired refresh token"`, and the cookie is cleared.
 
 Non-browser clients send the cookie back themselves (`Cookie: finvoice_refresh=<token>`), replace it after every refresh, and must not refresh concurrently with the same token.
 
 ### `POST /auth/logout`
 
-Requires the access token. It revokes this device's sign-in (other devices stay signed in), clears the cookie and answers `204`. The access token itself remains valid until it expires (at most 15 minutes).
+Requires the access token. It **deletes the guest account** with its financial profile, goals and literacy data, clears the cookie and answers `204` (an `ADMIN` account is not deleted; only its sign-in ends). Nobody can sign in to a guest account again, so nothing is kept. An access token issued before stays valid until it expires (at most 15 minutes), but finds no account: `/auth/me` answers `401`.
 
 ### `GET /auth/me`
 
-Requires the access token. The answer is `200 { "id", "preferredLanguage", "timezone", "role", "status" }`, with no phone number and no financial data. A deactivated or deleted user gets `401`.
+Requires the access token. The answer is `200 { "id", "preferredLanguage", "timezone", "role", "status" }`, with no financial data. A deactivated or deleted user gets `401`.
 
 ### Using the access token
 
@@ -175,34 +146,7 @@ Values with more than 2 decimal places are rejected, not rounded. The server com
 
 The `/users/:userId/…` routes (users, financial profile, goals) serve **only the caller's own id**. Another user's id answers `404 "User not found"`, exactly like an id that does not exist, so account ids cannot be probed. `ADMIN` gets no exception. `/me/…` is the simpler way to reach the same data.
 
-### `POST /users`
-
-**ADMIN only** (`401` without a token, `403` for a `USER`). This provisions an account on someone's behalf; it is **not** registration (people sign up through `/auth/verify-otp`). The new user is always `USER` and `ACTIVE`; a `role` field is rejected.
-
-```json
-{ "phoneNumber": "+94771234567", "preferredLanguage": "SI", "displayName": "Kamal" }
-```
-
-| Field               | Rules                                                                                      |
-| ------------------- | ------------------------------------------------------------------------------------------ |
-| `phoneNumber`       | Required. E.164: `+`, then 8–15 digits, first digit not 0, no spaces. Must be unique (409) |
-| `preferredLanguage` | Required. `SI`, `TA` or `EN`                                                               |
-| `displayName`       | Optional string or null, trimmed, at most 100 characters. Blank means `null`               |
-
-New users are `ACTIVE`, with time zone `Asia/Colombo`. `201 Created`:
-
-```json
-{
-  "id": "01a0dc6b-d44b-7875-ae8a-3f65af5078e0",
-  "phoneNumber": "+94771234567",
-  "displayName": "Kamal",
-  "preferredLanguage": "SI",
-  "timezone": "Asia/Colombo",
-  "status": "ACTIVE",
-  "createdAt": "2026-09-26T06:34:09.349Z",
-  "updatedAt": "2026-09-26T06:34:09.349Z"
-}
-```
+There is no `POST /users`: accounts are created only by `POST /auth/guest`.
 
 ### `GET /users/:userId`
 
@@ -210,9 +154,9 @@ Returns the caller's own user (`200`). Another user's id or an unknown id gets `
 
 ### `PATCH /users/:userId`
 
-Any of `preferredLanguage` and `displayName` (null clears it), with the same rules as creation. Everything else is rejected with `400`:
+Any of `preferredLanguage` and `displayName` (null clears it), with the same rules as `POST /auth/guest`. Everything else is rejected with `400`:
 
-- `phoneNumber`: the login identity; a verified change flow is future work;
+- `phoneNumber`: FinVoice stores no phone numbers;
 - `status` and `role`: administrative;
 - `id`, `timezone`, `createdAt` and `updatedAt`.
 
@@ -842,41 +786,33 @@ Every error from the API (domain routes, unknown routes and malformed requests) 
 
 `details` appears on validation errors, and on conflicts where a field is known. `field` is the dotted path of the offending field, or `null` when the problem is the request as a whole (for example an unknown property).
 
-| Status | `code`                | When                                                                                                                                                                                                                     |
-| ------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 400    | `VALIDATION_ERROR`    | Invalid body, query or path id, unknown property, or a broken domain rule (`currentAmount` > `targetAmount`)                                                                                                             |
-| 400    | `BAD_REQUEST`         | The request could not be parsed (for example malformed JSON)                                                                                                                                                             |
-| 401    | `UNAUTHORIZED`        | Missing, invalid or expired access token; wrong, expired or used sign-in code; invalid or reused refresh token; inactive account; internal endpoints: missing or wrong internal token                                    |
-| 403    | `FORBIDDEN`           | Signed in, but the role does not allow the action (for example a `USER` provisioning users)                                                                                                                              |
-| 404    | `NOT_FOUND`           | The user, profile or goal does not exist or belongs to another user; unknown route, inside or outside `/api/v1` (for example `/internal/…`): always this JSON format, `"message": "Route not found"`, never an HTML page |
-| 409    | `CONFLICT`            | Phone number already registered; the data changed concurrently (retrying may succeed)                                                                                                                                    |
-| 429    | `TOO_MANY_REQUESTS`   | Too many sign-in code requests for one phone number                                                                                                                                                                      |
-| 413    | `PAYLOAD_TOO_LARGE`   | Request body over 100 kB                                                                                                                                                                                                 |
-| 502    | `BAD_GATEWAY`         | The AI provider failed or returned an unusable response (agent only)                                                                                                                                                     |
-| 503    | `SERVICE_UNAVAILABLE` | The database cannot be reached; the AI agent, authentication, sign-in code delivery or the internal endpoints are not configured                                                                                         |
-| 500    | `INTERNAL_ERROR`      | Anything unexpected                                                                                                                                                                                                      |
+| Status | `code`                   | When                                                                                                                                                                                                                     |
+| ------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 400    | `VALIDATION_ERROR`       | Invalid body, query or path id, unknown property, or a broken domain rule (`currentAmount` > `targetAmount`)                                                                                                             |
+| 400    | `BAD_REQUEST`            | The request could not be parsed (for example malformed JSON)                                                                                                                                                             |
+| 401    | `UNAUTHORIZED`           | Missing, invalid or expired access token; invalid or reused refresh token; deleted or inactive account; internal endpoints: missing or wrong internal token                                                              |
+| 403    | `FORBIDDEN`              | Signed in, but the role does not allow the action (no route requires `ADMIN` today)                                                                                                                                      |
+| 404    | `NOT_FOUND`              | The user, profile or goal does not exist or belongs to another user; unknown route, inside or outside `/api/v1` (for example `/internal/…`): always this JSON format, `"message": "Route not found"`, never an HTML page |
+| 409    | `CONFLICT`               | The data changed concurrently (retrying may succeed)                                                                                                                                                                     |
+| 415    | `UNSUPPORTED_MEDIA_TYPE` | `POST /auth/guest` with a body that is not JSON                                                                                                                                                                          |
+| 429    | `TOO_MANY_REQUESTS`      | Too many guest accounts created recently (all clients together)                                                                                                                                                          |
+| 413    | `PAYLOAD_TOO_LARGE`      | Request body over 100 kB                                                                                                                                                                                                 |
+| 502    | `BAD_GATEWAY`            | The AI provider failed or returned an unusable response (agent only)                                                                                                                                                     |
+| 503    | `SERVICE_UNAVAILABLE`    | The database cannot be reached; the AI agent, authentication or the internal endpoints are not configured                                                                                                                |
+| 500    | `INTERNAL_ERROR`         | Anything unexpected                                                                                                                                                                                                      |
 
-Error responses never contain SQL, database or Prisma messages, constraint names, stack traces, connection strings, credentials, JWT verification errors, codes or tokens. Unexpected errors are logged on the server, with connection strings redacted.
+Error responses never contain SQL, database or Prisma messages, constraint names, stack traces, connection strings, credentials, JWT verification errors or tokens. Unexpected errors are logged on the server, with connection strings redacted.
 
 ## Example session (curl)
 
-For local development with the development OTP provider, put these in your own `.env` (never committed):
-
-- `AUTH_JWT_SECRET` and `AUTH_OTP_PEPPER`: two different random secrets;
-- `AUTH_OTP_PROVIDER=dev`;
-- `AUTH_OTP_DEV_CODE`: an 8-digit code of your choice.
-
-The code below is read from your environment rather than typed out.
+For local development, put `AUTH_JWT_SECRET` (a random secret) in your own `.env` (never committed).
 
 ```sh
 API=http://127.0.0.1:4000/api/v1
 
-CHALLENGE=$(curl -s -X POST $API/auth/request-otp -H 'content-type: application/json' \
-  -d '{"phoneNumber":"+94000000901"}' | node -pe 'JSON.parse(require("fs").readFileSync(0)).challengeId')
-
 # -c stores the refresh cookie in a file; -b sends it back
-TOKEN=$(curl -s -c cookies.txt -X POST $API/auth/verify-otp -H 'content-type: application/json' \
-  -d "{\"challengeId\":\"$CHALLENGE\",\"code\":\"$AUTH_OTP_DEV_CODE\",\"preferredLanguage\":\"SI\"}" \
+TOKEN=$(curl -s -c cookies.txt -X POST $API/auth/guest -H 'content-type: application/json' \
+  -d '{"preferredLanguage":"SI"}' \
   | node -pe 'JSON.parse(require("fs").readFileSync(0)).accessToken')
 AUTH="Authorization: Bearer $TOKEN"
 
@@ -894,6 +830,7 @@ curl -s $API/me/financial-context -H "$AUTH"
 # New access token (the cookie file is updated with the rotated refresh token)
 curl -s -b cookies.txt -c cookies.txt -X POST $API/auth/refresh
 
+# Deletes the guest account and everything above
 curl -s -X POST $API/auth/logout -H "$AUTH"
 rm cookies.txt
 
@@ -906,13 +843,8 @@ In PowerShell, use `Invoke-RestMethod` (a `WebRequestSession` keeps the refresh 
 
 ```powershell
 $api = "http://127.0.0.1:4000/api/v1"
-$challenge = Invoke-RestMethod -Method Post "$api/auth/request-otp" -ContentType "application/json" `
-  -Body '{"phoneNumber":"+94000000901"}'
-$body = @{ challengeId = $challenge.challengeId; code = $env:AUTH_OTP_DEV_CODE } | ConvertTo-Json
-$signIn = Invoke-RestMethod -Method Post "$api/auth/verify-otp" -ContentType "application/json" `
-  -Body $body -SessionVariable session
+$signIn = Invoke-RestMethod -Method Post "$api/auth/guest" -ContentType "application/json" `
+  -Body '{"preferredLanguage":"SI"}' -SessionVariable session
 $headers = @{ Authorization = "Bearer $($signIn.accessToken)" }
 Invoke-RestMethod "$api/me/financial-context" -Headers $headers
 ```
-
-`+94 0…` numbers are never assigned in Sri Lanka, so they are safe to use as test data.

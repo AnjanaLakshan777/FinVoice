@@ -16,8 +16,6 @@ import { truncateAllTables } from "./database.js";
 /** Test-only token; never a real secret. */
 const TOKEN = "internal-test-token-for-user-context-0123456789";
 const AUTH = { [INTERNAL_TOKEN_HEADER]: TOKEN };
-// Fake phone numbers: "+94" followed by 0 is never assigned in Sri Lanka's numbering plan.
-const PHONE = "+94000000901";
 
 let api: TestApi;
 
@@ -45,7 +43,7 @@ function getContext(userId: string, headers: Record<string, string> = AUTH) {
 
 async function createUser(overrides: { preferredLanguage?: "SI" | "TA" | "EN" } = {}) {
   return api.prisma.user.create({
-    data: { phoneNumber: PHONE, preferredLanguage: overrides.preferredLanguage ?? "SI" },
+    data: { preferredLanguage: overrides.preferredLanguage ?? "SI" },
   });
 }
 
@@ -188,9 +186,9 @@ describe("GET /internal/users/:userId/financial-context", () => {
     });
   });
 
-  it("contains no ids, phone number, display name, record timestamps or secrets", async () => {
+  it("contains no ids, display name, record timestamps or secrets", async () => {
     const user = await api.prisma.user.create({
-      data: { phoneNumber: PHONE, preferredLanguage: "EN", displayName: "Private Name" },
+      data: { preferredLanguage: "EN", displayName: "Private Name" },
     });
     const profile = await api.prisma.financialProfile.create({
       data: { userId: user.id, monthlyIncome: "1.00" },
@@ -205,15 +203,7 @@ describe("GET /internal/users/:userId/financial-context", () => {
 
     const { text } = await getContext(user.id);
 
-    for (const secret of [
-      user.id,
-      profile.id,
-      goal.id,
-      literacy.id,
-      PHONE,
-      "Private Name",
-      TOKEN,
-    ]) {
+    for (const secret of [user.id, profile.id, goal.id, literacy.id, "Private Name", TOKEN]) {
       expect(text).not.toContain(secret);
     }
     for (const key of ["id", "userId", "phoneNumber", "displayName", "createdAt", "updatedAt"]) {

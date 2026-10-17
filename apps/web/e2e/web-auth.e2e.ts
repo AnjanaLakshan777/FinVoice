@@ -8,18 +8,16 @@ import { chromium, type Browser, type BrowserContext, type Page } from "playwrig
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
- * Real browser end-to-end test of web sign-in, onboarding and goals (Step 12).
+ * Real browser end-to-end test of guest sign-in, onboarding, goals and logout.
  *
  * It starts the BUILT applications, as in production:
  * - the API (apps/api/dist/main.js) against the local development database from the root .env
- *   (localhost:5433), with the development OTP provider. The provider, its code and the auth
- *   secrets are generated here and exist only in that child process's environment; .env is not
- *   read or changed for them;
+ *   (localhost:5433). The JWT secret is generated here and exists only in that child process's
+ *   environment; .env is not read or changed for it;
  * - the web app (`next start`), whose same-origin proxy forwards /api/v1 to that API.
  *
- * The test knows the development code because it configured the server-side provider; the browser
- * receives it only by typing it into the code field, as a person would. Nothing exposes it to
- * browser JavaScript. The account it creates uses a fake +94 0… number and is deleted afterwards.
+ * Guest accounts have no phone number or code: the test starts with a language and a unique name.
+ * Logging out deletes each account; anything left by a failed run is deleted afterwards by name.
  *
  * Prerequisites: `pnpm db:up && pnpm db:migrate`, `pnpm build`, and Google Chrome or Microsoft
  * Edge installed (E2E_BROWSER_CHANNEL=chrome|msedge, default chrome). Run with `pnpm test:e2e`.
@@ -29,10 +27,7 @@ const WEB_DIR = join(import.meta.dirname, "..");
 const API_DIR = join(WEB_DIR, "..", "api");
 const REPO_DIR = join(WEB_DIR, "..", "..");
 
-const CODE = String(randomInt(0, 100_000_000)).padStart(8, "0");
-const SECRETS = [randomBytes(32).toString("base64url"), randomBytes(32).toString("base64url")];
-// "+94" followed by 0 is never assigned in Sri Lanka: a fake number, unique per run.
-const PHONE = `+9400${String(randomInt(1_000_000, 10_000_000))}`;
+const SECRET = randomBytes(32).toString("base64url");
 const NAME = `E2E ${String(randomInt(1000, 9999))}`;
 
 type Server = { child: ChildProcess; output: () => string; url: string };
@@ -77,7 +72,7 @@ async function start(
   throw new Error(`${command.join(" ")} did not start (${readyPath}):\n${output.slice(-2000)}`);
 }
 
-/** Deletes the test account (and its challenges) from the local docker compose database. */
+/** Deletes any test account left by a failed run from the local docker compose database. */
 function deleteTestAccount(): void {
   const run = (sql: string) =>
     spawnSync(
@@ -93,10 +88,7 @@ function deleteTestAccount(): void {
       ],
       { cwd: REPO_DIR, input: sql, encoding: "utf8" },
     );
-  run(
-    `DELETE FROM otp_challenges WHERE phone_number = '${PHONE}';` +
-      `DELETE FROM users WHERE phone_number = '${PHONE}';`,
-  );
+  run(`DELETE FROM users WHERE display_name = '${NAME}';`);
 }
 
 let api: Server;
@@ -127,10 +119,7 @@ beforeAll(async () => {
       NODE_ENV: "development",
       API_HOST: "127.0.0.1",
       API_PORT: String(apiPort),
-      AUTH_JWT_SECRET: SECRETS[0],
-      AUTH_OTP_PEPPER: SECRETS[1],
-      AUTH_OTP_PROVIDER: "dev",
-      AUTH_OTP_DEV_CODE: CODE,
+      AUTH_JWT_SECRET: SECRET,
       AUTH_REFRESH_COOKIE_SECURE: "false",
     },
     `http://127.0.0.1:${String(apiPort)}`,
@@ -176,15 +165,15 @@ describe("web authentication in a real browser (production builds)", () => {
     await page.goto("/dashboard");
     await page.waitForURL("**/login");
     await expect(
-      page.getByRole("heading", { name: "Sign in to FinVoice" }).isVisible(),
+      page.getByRole("heading", { name: "Get started with FinVoice" }).isVisible(),
     ).resolves.toBe(true);
   });
 
-  it("signs in with a phone number and the development code", async () => {
-    await page.getByLabel("Mobile number").fill(PHONE);
-    await page.getByRole("button", { name: "Send code" }).click();
-    await page.getByLabel("8-digit code").fill(CODE);
-    await page.getByRole("button", { name: "Verify" }).click();
+  it("starts a guest session with only a language and a name", async () => {
+    expect(await page.getByLabel(/mobile|phone|code/iu).count()).toBe(0);
+    await page.getByLabel("Preferred language").selectOption("SI");
+    await page.getByLabel("Your name (optional)").fill(NAME);
+    await page.getByRole("button", { name: "Start" }).click();
 
     // A new account starts with onboarding.
     await page.waitForURL("**/onboarding");
@@ -267,8 +256,9 @@ describe("web authentication in a real browser (production builds)", () => {
     expect(await page.getByRole("radio", { name: "தமிழ் (Tamil)" }).isChecked()).toBe(true);
   });
 
-  it("logs out and requires a new sign-in for protected pages", async () => {
+  it("logs out (deleting the account) and requires a new sign-in for protected pages", async () => {
     await page.getByRole("button", { name: "Log out" }).click();
+    await page.getByRole("button", { name: "Delete my data and log out" }).click();
     await page.waitForURL("**/login");
     expect(await refreshCookie()).toBeUndefined();
 
@@ -278,13 +268,12 @@ describe("web authentication in a real browser (production builds)", () => {
     }
   });
 
-  it("signs in again for the reload-race tests", async () => {
+  it("starts a new guest session for the reload-race tests (the old account is gone)", async () => {
     await page.goto("/login");
-    await page.getByLabel("Mobile number").fill(PHONE);
-    await page.getByRole("button", { name: "Send code" }).click();
-    await page.getByLabel("8-digit code").fill(CODE);
-    await page.getByRole("button", { name: "Verify" }).click();
-    await page.waitForURL("**/dashboard");
+    await page.getByLabel("Your name (optional)").fill(NAME);
+    await page.getByRole("button", { name: "Start" }).click();
+    await page.waitForURL("**/onboarding");
+    await page.goto("/dashboard");
     await page.getByRole("heading", { name: `Welcome, ${NAME}` }).waitFor();
   });
 
@@ -354,6 +343,7 @@ describe("web authentication in a real browser (production builds)", () => {
 
   it("still logs out completely after the races", async () => {
     await page.getByRole("button", { name: "Log out" }).click();
+    await page.getByRole("button", { name: "Delete my data and log out" }).click();
     await page.waitForURL("**/login");
     expect(await refreshCookie()).toBeUndefined();
     for (const path of ["/dashboard", "/goals"]) {
@@ -362,14 +352,14 @@ describe("web authentication in a real browser (production builds)", () => {
     }
   });
 
-  it("never exposed the code, tokens or the API's own address to the browser", () => {
+  it("never exposed tokens, the name or the API's own address", () => {
     // Every request went to the web origin (same-origin proxy), never straight to the API.
     expect(requestUrls.every((url) => url.startsWith(web.url))).toBe(true);
-    expect(requestUrls.some((url) => url.includes(CODE) || url.includes(PHONE))).toBe(false);
-    expect(consoleLines.join("\n")).not.toContain(CODE);
-    // The servers never logged the code, the phone number or the secrets.
+    expect(requestUrls.some((url) => url.includes(encodeURIComponent(NAME)))).toBe(false);
+    expect(consoleLines.join("\n")).not.toContain(NAME);
+    // The servers never logged the secret or the name.
     for (const output of [api.output(), web.output()]) {
-      for (const value of [CODE, PHONE, ...SECRETS]) {
+      for (const value of [SECRET, NAME]) {
         expect(output).not.toContain(value);
       }
     }

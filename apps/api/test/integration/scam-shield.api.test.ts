@@ -497,7 +497,7 @@ describe("privacy", () => {
 
     // Control: the audit does record writes made through the application's client.
     await api.prisma.user.create({
-      data: { phoneNumber: "+94000000777", preferredLanguage: "EN" },
+      data: { preferredLanguage: "EN" },
     });
     expect(await api.prisma.$queryRawUnsafe(`SELECT * FROM ${AUDIT}`)).toEqual([
       { table_name: "users", operation: "INSERT" },

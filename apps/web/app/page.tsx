@@ -72,7 +72,7 @@ export default function HomePage() {
             Start talking
           </Link>
           <Link href="/login" className={styles.secondary}>
-            Sign in
+            Get started
           </Link>
         </div>
       </section>

@@ -28,11 +28,11 @@ export type AuthContextValue = {
   state: AuthState;
   /** The shared API client: authenticated calls go through `client.request`. */
   client: AuthClient;
-  /** After a successful verify-otp: loads the signed-in user. */
+  /** After a guest session was started: loads the signed-in user. */
   completeSignIn: () => Promise<AuthMeResponse>;
   /** Reloads the signed-in user (for example after the language changed). */
   refreshUser: () => Promise<void>;
-  /** Logs out through the API and clears the in-memory session. */
+  /** Logs out through the API (which deletes the guest account) and clears the session. */
   signOut: () => Promise<void>;
 };
 

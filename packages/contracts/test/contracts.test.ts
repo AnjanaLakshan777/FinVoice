@@ -3,11 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   calendarDateSchema,
   createFinancialGoalRequestSchema,
-  createUserRequestSchema,
   currencyCodeSchema,
   listFinancialGoalsQuerySchema,
   moneyAmountSchema,
-  phoneNumberSchema,
   positiveMoneyAmountSchema,
   updateUserRequestSchema,
 } from "../src/index.js";
@@ -92,45 +90,6 @@ describe("calendarDateSchema", () => {
     "not-a-date",
   ])("rejects %j", (value) => {
     expect(calendarDateSchema.safeParse(value).success).toBe(false);
-  });
-});
-
-describe("phoneNumberSchema", () => {
-  it.each(["+94771234567", "+12025550123", "+123456789012345"])("accepts %j", (value) => {
-    expect(phoneNumberSchema.safeParse(value).success).toBe(true);
-  });
-
-  it.each([
-    "0771234567",
-    "94771234567",
-    "+94 77 123 4567",
-    "+0771234567",
-    "+1234567890123456",
-    "+1234567",
-  ])("rejects %j", (value) => {
-    expect(phoneNumberSchema.safeParse(value).success).toBe(false);
-  });
-});
-
-describe("createUserRequestSchema", () => {
-  it("trims the display name and turns a blank one into null", () => {
-    const base = { phoneNumber: "+94771234567", preferredLanguage: "SI" };
-
-    expect(createUserRequestSchema.parse({ ...base, displayName: "  Kamal  " }).displayName).toBe(
-      "Kamal",
-    );
-    expect(createUserRequestSchema.parse({ ...base, displayName: "   " }).displayName).toBeNull();
-  });
-
-  it("rejects properties that are not part of the contract", () => {
-    const result = createUserRequestSchema.safeParse({
-      phoneNumber: "+94771234567",
-      preferredLanguage: "SI",
-      isAdmin: true,
-      status: "ACTIVE",
-    });
-
-    expect(result.success).toBe(false);
   });
 });
 

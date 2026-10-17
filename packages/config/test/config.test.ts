@@ -4,8 +4,6 @@ import {
   ConfigValidationError,
   DEFAULT_GEMINI_LIVE_MODEL,
   DEFAULT_GEMINI_LIVE_VOICE,
-  DEV_OTP_PROVIDER_ENVIRONMENTS,
-  isDevOtpProviderEnvironment,
   loadAdminDashboardConfig,
   loadApiConfig,
   loadDatabaseConfig,
@@ -16,7 +14,6 @@ import {
 const DATABASE_URL = "postgresql://finvoice:not-a-real-secret@localhost:5432/finvoice";
 
 const JWT_SECRET = "j".repeat(43);
-const OTP_PEPPER = "p".repeat(43);
 
 describe("loadApiConfig", () => {
   it("applies local development defaults", () => {
@@ -31,17 +28,9 @@ describe("loadApiConfig", () => {
       auth: {
         enabled: false,
         jwtSecret: null,
-        otpPepper: null,
         accessTokenTtlSeconds: 900,
         refreshTokenTtlDays: 30,
-        otp: {
-          ttlSeconds: 300,
-          maxAttempts: 5,
-          requestLimit: 3,
-          requestWindowSeconds: 900,
-          provider: null,
-          devCode: null,
-        },
+        guest: { limit: 30, windowSeconds: 60 },
         refreshCookie: { name: "finvoice_refresh", secure: false },
       },
     });
@@ -55,7 +44,6 @@ describe("loadApiConfig", () => {
         API_PORT: "8080",
         DATABASE_URL,
         AUTH_JWT_SECRET: JWT_SECRET,
-        AUTH_OTP_PEPPER: OTP_PEPPER,
       }),
     ).toEqual({
       nodeEnv: "production",
@@ -68,17 +56,9 @@ describe("loadApiConfig", () => {
       auth: {
         enabled: true,
         jwtSecret: JWT_SECRET,
-        otpPepper: OTP_PEPPER,
         accessTokenTtlSeconds: 900,
         refreshTokenTtlDays: 30,
-        otp: {
-          ttlSeconds: 300,
-          maxAttempts: 5,
-          requestLimit: 3,
-          requestWindowSeconds: 900,
-          provider: null,
-          devCode: null,
-        },
+        guest: { limit: 30, windowSeconds: 60 },
         refreshCookie: { name: "finvoice_refresh", secure: true },
       },
     });
@@ -317,7 +297,6 @@ describe("authentication configuration", () => {
     NODE_ENV: "production",
     DATABASE_URL,
     AUTH_JWT_SECRET: JWT_SECRET,
-    AUTH_OTP_PEPPER: OTP_PEPPER,
   };
 
   function problems(env: Record<string, string>): string {
@@ -330,29 +309,16 @@ describe("authentication configuration", () => {
     }
   }
 
-  it("enables authentication only when both secrets are set", () => {
-    expect(loadApiConfig({ DATABASE_URL, AUTH_JWT_SECRET: JWT_SECRET }).auth.enabled).toBe(false);
-    expect(
-      loadApiConfig({ DATABASE_URL, AUTH_JWT_SECRET: JWT_SECRET, AUTH_OTP_PEPPER: OTP_PEPPER }).auth
-        .enabled,
-    ).toBe(true);
+  it("enables authentication only when the JWT secret is set", () => {
+    expect(loadApiConfig({ DATABASE_URL }).auth.enabled).toBe(false);
+    expect(loadApiConfig({ DATABASE_URL, AUTH_JWT_SECRET: JWT_SECRET }).auth.enabled).toBe(true);
   });
 
-  it("requires both secrets in production", () => {
-    const message = problems({ NODE_ENV: "production", DATABASE_URL });
-    expect(message).toContain("AUTH_JWT_SECRET");
-    expect(message).toContain("AUTH_OTP_PEPPER");
+  it("requires the JWT secret in production", () => {
+    expect(problems({ NODE_ENV: "production", DATABASE_URL })).toContain("AUTH_JWT_SECRET");
   });
 
-  it("rejects the development OTP provider, a development code and an insecure cookie in production", () => {
-    const devInProduction = problems({
-      ...PRODUCTION,
-      AUTH_OTP_PROVIDER: "dev",
-      AUTH_OTP_DEV_CODE: "12345678",
-    });
-    expect(devInProduction).toContain("AUTH_OTP_PROVIDER");
-    expect(devInProduction).toContain("AUTH_OTP_DEV_CODE");
-    expect(devInProduction).not.toContain("12345678");
+  it("requires a Secure refresh cookie in production", () => {
     expect(problems({ ...PRODUCTION, AUTH_REFRESH_COOKIE_SECURE: "false" })).toContain(
       "AUTH_REFRESH_COOKIE_SECURE",
     );
@@ -372,135 +338,50 @@ describe("authentication configuration", () => {
     );
   });
 
-  it("accepts the development provider in development, with its 8-digit code", () => {
-    const DEVELOPMENT = { NODE_ENV: "development", DATABASE_URL };
-    const config = loadApiConfig({
-      ...DEVELOPMENT,
-      AUTH_OTP_PROVIDER: "dev",
-      AUTH_OTP_DEV_CODE: "24681357",
-    });
-    expect(config.auth.otp).toMatchObject({ provider: "dev", devCode: "24681357" });
-    expect(problems({ ...DEVELOPMENT, AUTH_OTP_PROVIDER: "dev" })).toContain("AUTH_OTP_DEV_CODE");
-    expect(problems({ ...DEVELOPMENT, AUTH_OTP_PROVIDER: "sms" })).toContain("AUTH_OTP_PROVIDER");
-    for (const code of ["1234567", "123456789", "1234abcd"]) {
-      expect(
-        problems({ ...DEVELOPMENT, AUTH_OTP_PROVIDER: "dev", AUTH_OTP_DEV_CODE: code }),
-      ).toContain("AUTH_OTP_DEV_CODE");
-    }
-  });
-
-  describe("development OTP provider: development and test only", () => {
-    const DEV_CODE = "97531864";
-    const withDevProvider = (nodeEnv: string | undefined) => ({
-      DATABASE_URL,
-      ...(nodeEnv === undefined ? {} : { NODE_ENV: nodeEnv }),
-      AUTH_JWT_SECRET: JWT_SECRET,
-      AUTH_OTP_PEPPER: OTP_PEPPER,
-      AUTH_OTP_PROVIDER: "dev",
-      AUTH_OTP_DEV_CODE: DEV_CODE,
-    });
-
-    it.each(["development", "test"])("allows it with NODE_ENV=%s", (nodeEnv) => {
-      const config = loadApiConfig(withDevProvider(nodeEnv));
-
-      expect(config.nodeEnv).toBe(nodeEnv);
-      expect(config.auth.otp).toMatchObject({ provider: "dev", devCode: DEV_CODE });
-    });
-
-    it.each([
-      ["production", "production"],
-      ["staging", "staging"],
-      ["preview", "preview"],
-      ["an unknown environment", "qa"],
-      ["a differently cased value", "Development"],
-      ["a padded value", " development"],
-      ["a prefix of an allowed value", "dev"],
-      ["an empty value", ""],
-      ["an unset NODE_ENV (never defaulted into development)", undefined],
-    ])("rejects it for %s, without printing any secret", (_case, nodeEnv) => {
-      const message = problems(withDevProvider(nodeEnv));
-
-      expect(message).toContain("AUTH_OTP_PROVIDER");
-      expect(message).toContain("Allowed only when NODE_ENV is explicitly development or test");
-      for (const secret of [DEV_CODE, JWT_SECRET, OTP_PEPPER]) {
-        expect(message).not.toContain(secret);
-      }
-    });
-
-    it.each(["DEV", " dev ", "Dev"])(
-      "treats the spelling %j of the provider as the development provider",
-      (provider) => {
-        expect(problems({ ...withDevProvider("staging"), AUTH_OTP_PROVIDER: provider })).toContain(
-          "AUTH_OTP_PROVIDER",
-        );
-      },
-    );
-
-    it("rejects a development code on its own outside development and test", () => {
-      const message = problems({
-        NODE_ENV: "production",
+  it("reads the guest-session rate limit", () => {
+    expect(
+      loadApiConfig({
         DATABASE_URL,
-        AUTH_JWT_SECRET: JWT_SECRET,
-        AUTH_OTP_PEPPER: OTP_PEPPER,
-        AUTH_OTP_DEV_CODE: DEV_CODE,
-      });
-
-      expect(message).toContain("AUTH_OTP_DEV_CODE");
-      expect(message).not.toContain(DEV_CODE);
-    });
-
-    it("leaves every environment usable without the development provider", () => {
-      expect(loadApiConfig({ DATABASE_URL }).auth.otp.provider).toBeNull();
-      expect(
-        loadApiConfig({
-          NODE_ENV: "production",
-          DATABASE_URL,
-          AUTH_JWT_SECRET: JWT_SECRET,
-          AUTH_OTP_PEPPER: OTP_PEPPER,
-          AUTH_OTP_PROVIDER: "",
-        }).auth.otp.provider,
-      ).toBeNull();
-    });
-
-    it("exposes the allowlist as exactly development and test", () => {
-      expect(DEV_OTP_PROVIDER_ENVIRONMENTS).toEqual(["development", "test"]);
-      for (const value of ["development", "test"]) {
-        expect(isDevOtpProviderEnvironment(value)).toBe(true);
-      }
-      for (const value of ["production", "staging", "preview", "", undefined, null, "TEST"]) {
-        expect(isDevOtpProviderEnvironment(value)).toBe(false);
-      }
-    });
+        AUTH_GUEST_SESSION_LIMIT: "5",
+        AUTH_GUEST_SESSION_WINDOW_SECONDS: "120",
+      }).auth.guest,
+    ).toEqual({ limit: 5, windowSeconds: 120 });
   });
 
-  it("rejects short secrets without echoing them", () => {
+  it("ignores leftover OTP settings from older environment files", () => {
+    const config = loadApiConfig({
+      ...PRODUCTION,
+      AUTH_OTP_PEPPER: "p".repeat(43),
+      AUTH_OTP_PROVIDER: "dev",
+      AUTH_OTP_DEV_CODE: "12345678",
+    });
+    expect(config.auth.enabled).toBe(true);
+    expect(JSON.stringify(config.auth)).not.toContain("12345678");
+  });
+
+  it("rejects a short secret without echoing it", () => {
     const weak = "short-but-secret-value";
-    const message = problems({ DATABASE_URL, AUTH_JWT_SECRET: weak, AUTH_OTP_PEPPER: weak + "x" });
+    const message = problems({ DATABASE_URL, AUTH_JWT_SECRET: weak });
     expect(message).toContain("AUTH_JWT_SECRET");
-    expect(message).toContain("AUTH_OTP_PEPPER");
     expect(message).not.toContain(weak);
   });
 
-  it("keeps the JWT secret, the OTP pepper and the internal token different", () => {
-    expect(
-      problems({ DATABASE_URL, AUTH_JWT_SECRET: JWT_SECRET, AUTH_OTP_PEPPER: JWT_SECRET }),
-    ).toContain("AUTH_OTP_PEPPER");
-    expect(
-      problems({ DATABASE_URL, AUTH_JWT_SECRET: JWT_SECRET, INTERNAL_API_TOKEN: JWT_SECRET }),
-    ).toContain("INTERNAL_API_TOKEN");
-    expect(
-      problems({ DATABASE_URL, AUTH_JWT_SECRET: JWT_SECRET, INTERNAL_API_TOKEN: JWT_SECRET }),
-    ).not.toContain(JWT_SECRET);
+  it("keeps the JWT secret and the internal token different", () => {
+    const message = problems({
+      DATABASE_URL,
+      AUTH_JWT_SECRET: JWT_SECRET,
+      INTERNAL_API_TOKEN: JWT_SECRET,
+    });
+    expect(message).toContain("INTERNAL_API_TOKEN");
+    expect(message).not.toContain(JWT_SECRET);
   });
 
   it.each([
     ["AUTH_ACCESS_TOKEN_TTL_SECONDS", "-1"],
     ["AUTH_ACCESS_TOKEN_TTL_SECONDS", "0"],
     ["AUTH_REFRESH_TOKEN_TTL_DAYS", "0"],
-    ["AUTH_OTP_TTL_SECONDS", "10"],
-    ["AUTH_OTP_MAX_ATTEMPTS", "0"],
-    ["AUTH_OTP_REQUEST_LIMIT", "0"],
-    ["AUTH_OTP_REQUEST_WINDOW_SECONDS", "abc"],
+    ["AUTH_GUEST_SESSION_LIMIT", "0"],
+    ["AUTH_GUEST_SESSION_WINDOW_SECONDS", "abc"],
     ["AUTH_REFRESH_COOKIE_NAME", "bad name;"],
   ])("rejects %s=%s", (name, value) => {
     expect(problems({ DATABASE_URL, [name]: value })).toContain(name);

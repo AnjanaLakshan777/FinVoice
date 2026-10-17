@@ -1,12 +1,10 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { randomBytes, randomInt } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
-
-import { randomOtpCode } from "../support/auth.js";
 
 // Builds the API exactly as for deployment (`nest build`, which also emits the decorator metadata
 // Nest's dependency injection needs) and starts the REAL entry point, dist/main.js (NestFactory +
@@ -21,7 +19,6 @@ const NOT_FOUND = { statusCode: 404, code: "NOT_FOUND", message: "Route not foun
 
 const secret = (): string => randomBytes(32).toString("base64url");
 const JWT_SECRET = secret();
-const OTP_PEPPER = secret();
 
 type RunningApi = { baseUrl: string; child: ChildProcess; output: () => string };
 
@@ -53,9 +50,6 @@ function apiEnv(port: number, overrides: EnvOverrides): NodeJS.ProcessEnv {
     DATABASE_URL: inject("databaseUrl"),
     INTERNAL_API_TOKEN: TOKEN,
     AUTH_JWT_SECRET: JWT_SECRET,
-    AUTH_OTP_PEPPER: OTP_PEPPER,
-    AUTH_OTP_PROVIDER: "",
-    AUTH_OTP_DEV_CODE: "",
     AUTH_REFRESH_COOKIE_SECURE: "",
     ...overrides,
   };
@@ -215,7 +209,6 @@ describe("production bootstrap (nest build + dist/main.js)", () => {
     ["GET", "/api/v1/users/00000000-0000-7000-8000-000000000001"],
     ["GET", "/api/v1/users/00000000-0000-7000-8000-000000000001/financial-profile"],
     ["GET", "/api/v1/users/00000000-0000-7000-8000-000000000001/goals"],
-    ["POST", "/api/v1/users"],
     ["POST", "/api/v1/auth/logout"],
   ])("protects %s %s with a JSON 401", async (method, path) => {
     const response = await call(production, method, path);
@@ -241,35 +234,15 @@ describe("production bootstrap (nest build + dist/main.js)", () => {
     expect(response.status).toBe(200);
   });
 
-  it("has no OTP delivery in production (no real SMS provider yet): sign-in answers 503", async () => {
-    const response = await call(production, "POST", "/api/v1/auth/request-otp", {
-      body: { phoneNumber: "+94770000001" },
-    });
-
-    expect(response.status).toBe(503);
-    expect(response.json).toEqual({
-      statusCode: 503,
-      code: "SERVICE_UNAVAILABLE",
-      message: "Verification code delivery is not configured",
-    });
-  });
-
-  it("never logs the internal token or the auth secrets", () => {
+  it("never logs the internal token or the auth secret", () => {
     expect(production.output()).not.toContain(TOKEN);
     expect(production.output()).not.toContain(JWT_SECRET);
-    expect(production.output()).not.toContain(OTP_PEPPER);
   });
 });
 
 describe("production refuses unsafe authentication configuration", () => {
   it.each([
-    [
-      "the development OTP provider",
-      { AUTH_OTP_PROVIDER: "dev", AUTH_OTP_DEV_CODE: randomOtpCode() },
-      "AUTH_OTP_PROVIDER",
-    ],
     ["a missing JWT secret", { AUTH_JWT_SECRET: "" }, "AUTH_JWT_SECRET"],
-    ["a missing OTP pepper", { AUTH_OTP_PEPPER: "" }, "AUTH_OTP_PEPPER"],
     ["a short JWT secret", { AUTH_JWT_SECRET: "too-short-secret" }, "AUTH_JWT_SECRET"],
     [
       "an insecure refresh cookie",
@@ -289,113 +262,58 @@ describe("production refuses unsafe authentication configuration", () => {
       expect(result.code).not.toBe(0);
       expect(result.output).toContain("Invalid environment configuration");
       expect(result.output).toContain(variable);
-      for (const value of [JWT_SECRET, OTP_PEPPER, ...Object.values(overrides)]) {
+      for (const value of [JWT_SECRET, ...Object.values(overrides)]) {
         if (value.length >= 8) {
           expect(result.output).not.toContain(value);
         }
       }
     },
   );
-});
 
-// The development OTP provider is allowed ONLY with NODE_ENV exactly "development" or "test".
-describe("development OTP provider environment boundary (production build)", () => {
-  const DEV_CODE = randomOtpCode();
-
-  it.each([
-    ["production", "production"],
-    ["staging", "staging"],
-    ["preview", "preview"],
-    ["an unknown environment", "qa"],
-    ["a differently cased value", "Development"],
-    ["an unset NODE_ENV", undefined],
-  ])("refuses to start with the development provider for %s", async (_case, nodeEnv) => {
-    const result = await startRefused({
-      NODE_ENV: nodeEnv,
-      AUTH_OTP_PROVIDER: "dev",
-      AUTH_OTP_DEV_CODE: DEV_CODE,
-    });
-
-    expect(result.code).not.toBe(0);
-    expect(result.output).toContain("Invalid environment configuration");
-    expect(result.output).toContain("AUTH_OTP_PROVIDER");
-    expect(result.output).toContain("Allowed only when NODE_ENV is explicitly development or test");
-    for (const secret of [DEV_CODE, JWT_SECRET, OTP_PEPPER]) {
-      expect(result.output).not.toContain(secret);
-    }
-  });
-
-  it("starts with the development provider for NODE_ENV=test (development: see below)", async () => {
+  it("starts with leftover OTP settings from an older environment file, and ignores them", async () => {
+    const leftover = secret();
     const api = await startApi({
-      NODE_ENV: "test",
+      NODE_ENV: "production",
+      AUTH_OTP_PEPPER: leftover,
       AUTH_OTP_PROVIDER: "dev",
-      AUTH_OTP_DEV_CODE: DEV_CODE,
+      AUTH_OTP_DEV_CODE: "12345678",
     });
     try {
-      const response = await call(api, "POST", "/api/v1/auth/request-otp", {
-        body: { phoneNumber: "+94000000011" },
-      });
-
-      expect(response.status).toBe(202);
-      expect(response.text).not.toContain(DEV_CODE);
-      expect(api.output()).not.toContain(DEV_CODE);
+      expect((await call(api, "GET", "/health")).status).toBe(200);
+      expect(api.output()).not.toContain(leftover);
     } finally {
       api.child.kill();
     }
   }, 60_000);
 });
 
-// The same build, started in development mode with the development OTP provider (configured only
-// in this process's environment, never in a file): the complete sign-in flow over real HTTP.
-describe("authentication flow on the production build (development OTP provider)", () => {
-  const code = randomOtpCode();
-  const phoneNumber = `+9477${String(randomInt(1_000_000, 10_000_000))}`;
-  let dev: RunningApi;
-
-  beforeAll(async () => {
-    dev = await startApi({
-      NODE_ENV: "development",
-      AUTH_OTP_PROVIDER: "dev",
-      AUTH_OTP_DEV_CODE: code,
+// The complete guest flow over real HTTP against the production build.
+describe("guest authentication flow on the production build", () => {
+  it("signs in, uses the session, rotates, detects reuse, and logout deletes the account", async () => {
+    const created = await call(production, "POST", "/api/v1/auth/guest", {
+      body: { preferredLanguage: "SI", displayName: "Bootstrap Guest" },
     });
-  }, 60_000);
-
-  afterAll(() => {
-    dev.child.kill();
-  });
-
-  it("signs in, uses the session, rotates, detects reuse and logs out", async () => {
-    const requested = await call(dev, "POST", "/api/v1/auth/request-otp", {
-      body: { phoneNumber },
-    });
-    expect(requested.status).toBe(202);
-    expect(requested.text).not.toContain(code);
-    const { challengeId } = requested.json as { challengeId: string };
-
-    const verified = await call(dev, "POST", "/api/v1/auth/verify-otp", {
-      body: { challengeId, code, preferredLanguage: "SI" },
-    });
-    expect(verified.status).toBe(200);
-    const signedIn = verified.json as {
+    expect(created.status, production.output()).toBe(201);
+    const signedIn = created.json as {
       accessToken: string;
       user: { id: string; role: string };
     };
     expect(signedIn.user.role).toBe("USER");
-    const setCookie = verified.headers.get("set-cookie") ?? "";
+    const setCookie = created.headers.get("set-cookie") ?? "";
     expect(setCookie).toMatch(/^finvoice_refresh=[A-Za-z0-9_-]{43}; /u);
     expect(setCookie).toContain("HttpOnly");
+    expect(setCookie).toContain("Secure");
     expect(setCookie).toContain("SameSite=Lax");
     expect(setCookie).toContain("Path=/api/v1/auth");
     const firstCookie = setCookie.split(";")[0] ?? "";
-    expect(verified.text).not.toContain(firstCookie.split("=")[1]);
+    expect(created.text).not.toContain(firstCookie.split("=")[1]);
     const bearer = { authorization: `Bearer ${signedIn.accessToken}` };
 
-    const me = await call(dev, "GET", "/api/v1/auth/me", { headers: bearer });
+    const me = await call(production, "GET", "/api/v1/auth/me", { headers: bearer });
     expect(me).toMatchObject({
       status: 200,
       json: { id: signedIn.user.id, role: "USER", status: "ACTIVE", preferredLanguage: "SI" },
     });
-    expect(me.text).not.toContain(phoneNumber);
 
     for (const path of [
       "/api/v1/me",
@@ -405,20 +323,18 @@ describe("authentication flow on the production build (development OTP provider)
       `/api/v1/users/${signedIn.user.id}`,
       `/api/v1/users/${signedIn.user.id}/goals`,
     ]) {
-      const response = await call(dev, "GET", path, { headers: bearer });
+      const response = await call(production, "GET", path, { headers: bearer });
       expect(response.status, path).toBe(200);
     }
-    const otherUser = await call(dev, "GET", "/api/v1/users/00000000-0000-7000-8000-000000000001", {
-      headers: bearer,
-    });
+    const otherUser = await call(
+      production,
+      "GET",
+      "/api/v1/users/00000000-0000-7000-8000-000000000001",
+      { headers: bearer },
+    );
     expect(otherUser.status).toBe(404);
-    const admin = await call(dev, "POST", "/api/v1/users", {
-      headers: bearer,
-      body: { phoneNumber: "+94770000002", preferredLanguage: "EN" },
-    });
-    expect(admin.status).toBe(403);
 
-    const refreshed = await call(dev, "POST", "/api/v1/auth/refresh", {
+    const refreshed = await call(production, "POST", "/api/v1/auth/refresh", {
       headers: { cookie: firstCookie },
     });
     expect(refreshed.status).toBe(200);
@@ -428,37 +344,38 @@ describe("authentication flow on the production build (development OTP provider)
     // The first token again, after the short grace period for overlapping refreshes (a reload
     // race) has passed: reuse. The whole family is revoked, including the new token.
     await new Promise((resolve) => setTimeout(resolve, 5_500));
-    const reused = await call(dev, "POST", "/api/v1/auth/refresh", {
+    const reused = await call(production, "POST", "/api/v1/auth/refresh", {
       headers: { cookie: firstCookie },
     });
     expect(reused.status).toBe(401);
-    const afterReuse = await call(dev, "POST", "/api/v1/auth/refresh", {
+    const afterReuse = await call(production, "POST", "/api/v1/auth/refresh", {
       headers: { cookie: secondCookie },
     });
     expect(afterReuse.status).toBe(401);
 
-    // A fresh sign-in (new family), then logout revokes it.
-    const again = await call(dev, "POST", "/api/v1/auth/request-otp", { body: { phoneNumber } });
-    const verifiedAgain = await call(dev, "POST", "/api/v1/auth/verify-otp", {
-      body: { challengeId: (again.json as { challengeId: string }).challengeId, code },
+    // A new guest, then logout deletes that account.
+    const again = await call(production, "POST", "/api/v1/auth/guest", {
+      body: { preferredLanguage: "EN" },
     });
-    expect(verifiedAgain.status).toBe(200);
-    const token = (verifiedAgain.json as { accessToken: string; user: { id: string } }).accessToken;
-    expect((verifiedAgain.json as { user: { id: string } }).user.id).toBe(signedIn.user.id);
-    const cookie = (verifiedAgain.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
-    const logout = await call(dev, "POST", "/api/v1/auth/logout", {
-      headers: { authorization: `Bearer ${token}` },
-    });
+    expect(again.status).toBe(201);
+    const second = again.json as { accessToken: string; user: { id: string } };
+    expect(second.user.id).not.toBe(signedIn.user.id);
+    const cookie = (again.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+    const secondBearer = { authorization: `Bearer ${second.accessToken}` };
+    const logout = await call(production, "POST", "/api/v1/auth/logout", { headers: secondBearer });
     expect(logout.status).toBe(204);
     expect(logout.headers.get("set-cookie")).toMatch(/^finvoice_refresh=; Max-Age=0; /u);
-    const afterLogout = await call(dev, "POST", "/api/v1/auth/refresh", {
+    const afterLogout = await call(production, "POST", "/api/v1/auth/refresh", {
       headers: { cookie },
     });
     expect(afterLogout.status).toBe(401);
+    expect(
+      (await call(production, "GET", "/api/v1/auth/me", { headers: secondBearer })).status,
+    ).toBe(401);
 
     // Nothing sensitive in the server's output.
-    const log = dev.output();
-    for (const value of [code, phoneNumber, signedIn.accessToken, token, JWT_SECRET, OTP_PEPPER]) {
+    const log = production.output();
+    for (const value of [signedIn.accessToken, second.accessToken, JWT_SECRET, "Bootstrap Guest"]) {
       expect(log).not.toContain(value);
     }
     for (const value of [firstCookie, secondCookie, cookie]) {

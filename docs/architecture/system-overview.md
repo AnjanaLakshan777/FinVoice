@@ -82,13 +82,13 @@ Browser / app ──Bearer access token──▶ /api/v1/*   (public routes mark
 Voice gateway, web server ──INTERNAL_API_TOKEN──▶ /internal/*   (service-to-service only)
 ```
 
-- **End users** sign in with a phone number and a one-time code (`/api/v1/auth/*`). They then use a 15-minute JWT access token and a rotating 30-day refresh session.
+- **End users** start a guest account with only a preferred language (`POST /api/v1/auth/guest`): no phone number, code or password, and FinVoice stores no phone numbers. They then use a 15-minute JWT access token and a rotating 30-day refresh session; logging out deletes the account.
 - **Global guard, secure by default:** the API checks every route. Public routes (health, calculations, knowledge, the general agent, ScamShield, sign-in) are marked `@Public()`; internal routes are marked `@InternalOnly()`.
 - **Ownership:** personal data is served only to its owner: `/users/:userId/*` for the caller's own id, and `/api/v1/me/*`. Another user's id is hidden behind 404.
 - **Roles:** `ADMIN` is a server-assigned role for explicit admin operations. It never grants access to other users' personal data.
 - **Two trust domains, never mixed:** the internal token remains the separate credential for trusted services. Neither credential opens the other domain.
 - **Not personalised yet:** the AI agent and browser voice are unchanged and anonymous.
-- **Not production-ready yet:** no SMS provider is integrated. Production sign-in answers 503 until one is added.
+- **No paid sign-in provider:** guest sign-in needs no SMS service. A guest account lives in one browser and has no recovery.
 
 ## Architectural principles
 
@@ -115,7 +115,7 @@ Voice gateway, web server ──INTERNAL_API_TOKEN──▶ /internal/*   (servi
 | `apps/web/app/admin`             | Temporary admin dashboard (server-rendered)              | `/admin`, disabled unless `ADMIN_DASHBOARD_ENABLED=true`                      |
 | `apps/api/prisma/knowledge`      | Curated knowledge content and insert-only seed           | 12 CBSL-sourced articles                                                      |
 | `apps/api/src/financial-context` | Personal financial context and literacy                  | `/internal/users/*` (token-protected), `/api/v1/me/*-context`                 |
-| `apps/api/src/auth`              | Authentication and authorisation (OTP, JWT, sessions)    | `/api/v1/auth/*`, global guards, `pnpm auth:cleanup`                          |
+| `apps/api/src/auth`              | Authentication and authorisation (guests, JWT, sessions) | `/api/v1/auth/*`, global guards, `pnpm auth:cleanup`                          |
 | `apps/api/src/me`                | The signed-in user's own data                            | `/api/v1/me/*`                                                                |
 | `apps/api/src/ai`                | Text AI agent: Gemini adapter, tool registry, agent      | `POST /api/v1/agent/chat`, internal voice endpoints                           |
 | `packages/config`                | Environment parsing and validation                       | API and voice gateway loaders                                                 |
@@ -124,4 +124,4 @@ Voice gateway, web server ──INTERNAL_API_TOKEN──▶ /internal/*   (servi
 
 ## Not yet built
 
-In later steps: a real SMS OTP provider, admin web authorisation (connecting the admin dashboard to authenticated `ADMIN` users instead of its temporary internal-token boundary), an authenticated voice-session identity and personalised answers through the prepared user-context tools, distributed rate limiting, Asterisk and SIP configuration, the AudioSocket server (reusing the Step 7 voice session and Gemini Live adapter), RAG over the knowledge base, knowledge administration, Gemini explanations of ScamShield results (the engine stays authoritative), and deployment.
+In later steps: admin web authorisation (connecting the admin dashboard to authenticated `ADMIN` users instead of its temporary internal-token boundary), an authenticated voice-session identity and personalised answers through the prepared user-context tools, distributed rate limiting, Asterisk and SIP configuration, the AudioSocket server (reusing the Step 7 voice session and Gemini Live adapter), RAG over the knowledge base, knowledge administration, Gemini explanations of ScamShield results (the engine stays authoritative), and deployment.

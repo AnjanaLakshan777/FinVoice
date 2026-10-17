@@ -17,7 +17,7 @@ const BEARER = /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*)$/i;
  * @Public() or @InternalOnly(). Runs before validation, so unauthenticated callers learn nothing
  * about a route's inputs.
  *
- * - Authentication not configured (AUTH_JWT_SECRET / AUTH_OTP_PEPPER missing): 503.
+ * - Authentication not configured (AUTH_JWT_SECRET missing): 503.
  * - Header missing, not Bearer, or token invalid, expired, wrongly signed or with the wrong
  *   algorithm, issuer or audience: 401, always with the same message.
  *

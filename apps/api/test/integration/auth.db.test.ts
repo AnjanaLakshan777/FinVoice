@@ -5,7 +5,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   AUTH_SESSION_RETENTION_DAYS,
   deleteExpiredAuthData,
-  OTP_CHALLENGE_RETENTION_DAYS,
+  ORPHANED_GUEST_MIN_AGE_DAYS,
 } from "../../src/auth/auth-cleanup.js";
 import {
   createTestPrismaClient,
@@ -26,23 +26,8 @@ beforeEach(async () => {
   await truncateAllTables(prisma);
 });
 
-function createUser(phoneNumber = "+94000000801") {
-  return prisma.user.create({ data: { phoneNumber, preferredLanguage: "EN" } });
-}
-
-function challenge(overrides: Record<string, unknown> = {}) {
-  const now = new Date();
-  return prisma.otpChallenge.create({
-    data: {
-      id: randomUUID(),
-      phoneNumber: "+94000000801",
-      codeHash: HASH,
-      createdAt: now,
-      expiresAt: new Date(now.getTime() + 300_000),
-      maxAttempts: 5,
-      ...overrides,
-    },
-  });
+function createUser(overrides: Record<string, unknown> = {}) {
+  return prisma.user.create({ data: { preferredLanguage: "EN", ...overrides } });
 }
 
 async function session(overrides: Record<string, unknown> = {}) {
@@ -69,26 +54,6 @@ describe("users.role", () => {
       prisma.$executeRaw`UPDATE users SET role = 'OWNER' WHERE id = ${user.id}::uuid`,
       { code: "P2010", message: "user_role" },
     );
-  });
-});
-
-describe("otp_challenges constraints", () => {
-  it("accepts a well-formed challenge", async () => {
-    await expect(challenge()).resolves.toMatchObject({ attempts: 0 });
-  });
-
-  it.each([
-    ["phone_number_e164_check", { phoneNumber: "0771234567" }],
-    ["code_hash_format_check", { codeHash: "12345678".padEnd(64, "Z") }],
-    ["code_hash_format_check", { codeHash: "A".repeat(64) }],
-    ["max_attempts_range_check", { maxAttempts: 0 }],
-    ["max_attempts_range_check", { maxAttempts: 21 }],
-    ["attempts_range_check", { attempts: 6 }],
-    ["attempts_range_check", { attempts: -1 }],
-    ["expires_after_created_check", { expiresAt: new Date(Date.now() - 1000) }],
-    ["single_outcome_check", { consumedAt: new Date(), supersededAt: new Date() }],
-  ])("enforces %s (%j)", async (constraint, overrides) => {
-    await expectCheckViolation(challenge(overrides), `otp_challenges_${constraint}`);
   });
 });
 
@@ -122,20 +87,10 @@ describe("auth_sessions constraints", () => {
 });
 
 describe("auth cleanup", () => {
-  it("deletes only expired challenges and sessions past their retention period", async () => {
+  it("deletes only sessions past their retention period", async () => {
     const now = new Date();
     const ago = (days: number, extraMs = 0) => new Date(now.getTime() - days * DAY - extraMs);
     const created = (expiresAt: Date) => new Date(expiresAt.getTime() - 60_000);
-
-    // Challenges: expired long ago (deleted), recently expired (kept), active (kept).
-    const oldExpiry = ago(OTP_CHALLENGE_RETENTION_DAYS, 1000);
-    const oldChallenge = await challenge({ createdAt: created(oldExpiry), expiresAt: oldExpiry });
-    const recentExpiry = ago(0, 60_000);
-    const recentChallenge = await challenge({
-      createdAt: created(recentExpiry),
-      expiresAt: recentExpiry,
-    });
-    const activeChallenge = await challenge();
 
     // Sessions: expired past retention (deleted, revoked or not), expired recently (kept),
     // active (kept), revoked but unexpired (kept: needed for reuse detection).
@@ -160,10 +115,7 @@ describe("auth cleanup", () => {
 
     const result = await deleteExpiredAuthData(prisma, now);
 
-    expect(result).toEqual({ deletedOtpChallenges: 1, deletedAuthSessions: 2 });
-    const remainingChallenges = (await prisma.otpChallenge.findMany()).map((row) => row.id).sort();
-    expect(remainingChallenges).toEqual([recentChallenge.id, activeChallenge.id].sort());
-    expect(remainingChallenges).not.toContain(oldChallenge.id);
+    expect(result).toEqual({ deletedAuthSessions: 2, deletedGuestAccounts: 0 });
     const remainingSessions = (await prisma.authSession.findMany()).map((row) => row.id).sort();
     expect(remainingSessions).toEqual(
       [recentSession.id, activeSession.id, revokedActive.id].sort(),
@@ -174,8 +126,46 @@ describe("auth cleanup", () => {
 
     // Idempotent.
     expect(await deleteExpiredAuthData(prisma, now)).toEqual({
-      deletedOtpChallenges: 0,
       deletedAuthSessions: 0,
+      deletedGuestAccounts: 0,
     });
+  });
+
+  it("deletes guest accounts nobody can sign in to any more, with their data", async () => {
+    const now = new Date();
+    const old = new Date(now.getTime() - (ORPHANED_GUEST_MIN_AGE_DAYS + 1) * DAY);
+    const sessionFor = (userId: string, overrides: Record<string, unknown> = {}) =>
+      session({ userId, createdAt: old, ...overrides });
+
+    // Only an expired session: nobody can sign in. Deleted, with its profile and goal.
+    const expiredOnly = await createUser({ createdAt: old });
+    await sessionFor(expiredOnly.id, { expiresAt: new Date(now.getTime() - 1000) });
+    await prisma.financialProfile.create({ data: { userId: expiredOnly.id } });
+    await prisma.financialGoal.create({
+      data: { userId: expiredOnly.id, type: "SAVINGS", name: "Goal", targetAmount: "1000.00" },
+    });
+    // Only a revoked (logged out) session: deleted.
+    const revokedOnly = await createUser({ createdAt: old });
+    await sessionFor(revokedOnly.id, { revokedAt: now });
+    // No session at all (for example the seed users, or an old account): deleted.
+    const noSession = await createUser({ createdAt: old });
+    // A usable session: kept.
+    const active = await createUser({ createdAt: old });
+    await sessionFor(active.id);
+    // Too new to judge (being created right now): kept.
+    const brandNew = await createUser();
+    // An ADMIN account is never deleted by the cleanup.
+    const admin = await createUser({ createdAt: old, role: "ADMIN" });
+
+    const result = await deleteExpiredAuthData(prisma, now);
+
+    expect(result.deletedGuestAccounts).toBe(3);
+    const remaining = (await prisma.user.findMany()).map((user) => user.id).sort();
+    expect(remaining).toEqual([active.id, brandNew.id, admin.id].sort());
+    expect(remaining).not.toContain(expiredOnly.id);
+    expect(remaining).not.toContain(revokedOnly.id);
+    expect(remaining).not.toContain(noSession.id);
+    expect(await prisma.financialProfile.count()).toBe(0);
+    expect(await prisma.financialGoal.count()).toBe(0);
   });
 });

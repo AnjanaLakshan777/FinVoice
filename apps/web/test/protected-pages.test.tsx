@@ -85,10 +85,26 @@ describe("protected pages", () => {
     expect(api.callsTo("POST", "/auth/refresh")).toHaveLength(1);
   });
 
+  it("ask before logging out, because logging out deletes the account", async () => {
+    const api = signedInApi().on("POST", "/auth/logout", { status: 204 });
+    renderProtected(api);
+    fireEvent.click(await screen.findByRole("button", { name: "Log out" }));
+
+    expect(screen.getByRole("alertdialog").textContent).toContain(
+      "Logging out deletes your details and goals",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(api.callsTo("POST", "/auth/logout")).toHaveLength(0);
+    expect(screen.getByText("Secret page")).toBeTruthy();
+  });
+
   it("log out through the API, forget the session and return to /login", async () => {
     const api = signedInApi().on("POST", "/auth/logout", { status: 204 });
     renderProtected(api);
     fireEvent.click(await screen.findByRole("button", { name: "Log out" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete my data and log out" }));
 
     await waitFor(() => {
       expect(router.replace).toHaveBeenCalledWith("/login");

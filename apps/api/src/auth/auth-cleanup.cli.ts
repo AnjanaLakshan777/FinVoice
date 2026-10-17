@@ -1,10 +1,10 @@
 /**
- * Deletes expired OTP challenges and expired auth sessions (see auth-cleanup.ts for the retention
- * periods).
+ * Deletes expired auth sessions and guest accounts nobody can sign in to any more (see
+ * auth-cleanup.ts for the rules).
  *
  * Run with `pnpm auth:cleanup` (development) or `node dist/auth/auth-cleanup.cli.js` (a built
  * deployment, for example from a scheduler). Safe to run repeatedly. It never runs at API startup,
- * never deletes an unexpired session, and prints only counts: no phone numbers, codes or tokens.
+ * never deletes an unexpired session or an ADMIN account, and prints only counts.
  */
 import { loadApiConfig } from "@finvoice/config";
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -20,7 +20,7 @@ async function main(): Promise<void> {
   try {
     const result = await deleteExpiredAuthData(prisma);
     console.info(
-      `Auth cleanup: deleted ${String(result.deletedOtpChallenges)} expired OTP challenges and ${String(result.deletedAuthSessions)} expired auth sessions.`,
+      `Auth cleanup: deleted ${String(result.deletedAuthSessions)} expired auth sessions and ${String(result.deletedGuestAccounts)} guest accounts without a usable session.`,
     );
   } finally {
     await prisma.$disconnect();

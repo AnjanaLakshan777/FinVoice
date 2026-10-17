@@ -3,7 +3,6 @@ import {
   FINANCIAL_GOAL_STATUSES,
   FINANCIAL_GOAL_TYPES,
   LANGUAGES,
-  OTP_CODE_LENGTH as CONTRACT_OTP_CODE_LENGTH,
 } from "@finvoice/contracts";
 import { describe, expect, it } from "vitest";
 
@@ -12,7 +11,6 @@ import {
   GOAL_STATUS_OPTIONS,
   GOAL_TYPE_OPTIONS,
   LANGUAGE_OPTIONS,
-  OTP_CODE_LENGTH,
 } from "../lib/account/constants";
 import { fieldErrors, friendlyError, MESSAGES } from "../lib/account/messages";
 import { formatMoney, groupDigits, normalizeAmountInput, toCents } from "../lib/account/money";
@@ -23,9 +21,7 @@ describe("constants mirrored from @finvoice/contracts", () => {
     expect(LANGUAGE_OPTIONS.map((option) => option.value)).toEqual([...LANGUAGES]);
     expect(GOAL_TYPE_OPTIONS.map((option) => option.value)).toEqual([...FINANCIAL_GOAL_TYPES]);
     expect(GOAL_STATUS_OPTIONS.map((option) => option.value)).toEqual([...FINANCIAL_GOAL_STATUSES]);
-    expect(AUTH_API_MESSAGES.invalidCode).toBe(AUTH_ERROR_MESSAGES.invalidCode);
     expect(AUTH_API_MESSAGES.authenticationFailed).toBe(AUTH_ERROR_MESSAGES.authenticationFailed);
-    expect(OTP_CODE_LENGTH).toBe(CONTRACT_OTP_CODE_LENGTH);
   });
 });
 
@@ -60,32 +56,25 @@ describe("friendly error messages", () => {
     new ApiError(status, code, message);
 
   it.each([
-    [error(400, "VALIDATION_ERROR"), "requestOtp", MESSAGES.invalidPhone],
-    [error(400, "VALIDATION_ERROR"), "verifyOtp", MESSAGES.invalidCodeFormat],
-    [
-      error(401, "UNAUTHORIZED", AUTH_ERROR_MESSAGES.invalidCode),
-      "verifyOtp",
-      MESSAGES.codeIncorrect,
-    ],
     [
       error(401, "UNAUTHORIZED", AUTH_ERROR_MESSAGES.authenticationFailed),
-      "verifyOtp",
       MESSAGES.accountInactive,
     ],
-    [error(429, "TOO_MANY_REQUESTS"), "requestOtp", MESSAGES.tooManyRequests],
-    [error(503, "SERVICE_UNAVAILABLE"), "requestOtp", MESSAGES.unavailable],
-    [error(0, "NETWORK_ERROR"), "account", MESSAGES.unavailable],
-    [error(500, "INTERNAL_ERROR"), "account", MESSAGES.unavailable],
-    [error(400, "VALIDATION_ERROR"), "account", MESSAGES.validation],
-    [error(401, "UNAUTHORIZED"), "account", MESSAGES.sessionExpired],
-    [new SessionExpiredError(), "account", MESSAGES.sessionExpired],
-    [new Error("database exploded at 10.0.0.1"), "account", MESSAGES.unexpected],
-  ] as const)("maps %o in %s", (caught, context, expected) => {
-    expect(friendlyError(caught, context)).toBe(expected);
+    [error(429, "TOO_MANY_REQUESTS"), MESSAGES.tooManyRequests],
+    [error(503, "SERVICE_UNAVAILABLE"), MESSAGES.unavailable],
+    [error(0, "NETWORK_ERROR"), MESSAGES.unavailable],
+    [error(500, "INTERNAL_ERROR"), MESSAGES.unavailable],
+    [error(400, "VALIDATION_ERROR"), MESSAGES.validation],
+    [error(401, "UNAUTHORIZED"), MESSAGES.sessionExpired],
+    [error(404, "NOT_FOUND"), MESSAGES.notFound],
+    [new SessionExpiredError(), MESSAGES.sessionExpired],
+    [new Error("database exploded at 10.0.0.1"), MESSAGES.unexpected],
+  ] as const)("maps %o", (caught, expected) => {
+    expect(friendlyError(caught)).toBe(expected);
   });
 
   it("never passes a raw API message through", () => {
-    const raw = new ApiError(500, "INTERNAL_ERROR", "Prisma P2002 on users_phone_number_key");
+    const raw = new ApiError(500, "INTERNAL_ERROR", "Prisma P2002 on users_pkey");
 
     expect(friendlyError(raw)).not.toContain("Prisma");
   });

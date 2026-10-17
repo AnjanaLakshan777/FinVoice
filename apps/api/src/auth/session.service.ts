@@ -245,7 +245,7 @@ export class SessionService {
 
 /**
  * Serialises every change to one token family for the rest of the transaction. Keys are
- * namespaced ("auth-family:"), separate from the OTP request lock ("otp-request:").
+ * namespaced ("auth-family:"), separate from the guest-creation lock ("auth-guest-create").
  */
 async function lockFamily(tx: Tx, tokenFamilyId: string): Promise<void> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`auth-family:${tokenFamilyId}`}, 0))`;

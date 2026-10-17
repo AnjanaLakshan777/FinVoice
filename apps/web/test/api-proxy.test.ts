@@ -107,8 +107,8 @@ describe("same-origin API proxy", () => {
     });
 
     const response = await proxyApiRequest(
-      browserRequest("/api/v1/auth/verify-otp", { method: "POST", body: "{}" }),
-      ["auth", "verify-otp"],
+      browserRequest("/api/v1/auth/guest", { method: "POST", body: "{}" }),
+      ["auth", "guest"],
       API,
       api.fetch,
     );

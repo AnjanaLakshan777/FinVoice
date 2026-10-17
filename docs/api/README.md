@@ -12,8 +12,7 @@ Authentication, the signed-in user's own data (`/me`), users, financial profiles
 
 | Method  | Path                                      |
 | ------- | ----------------------------------------- |
-| `POST`  | `/api/v1/auth/request-otp`                |
-| `POST`  | `/api/v1/auth/verify-otp`                 |
+| `POST`  | `/api/v1/auth/guest`                      |
 | `POST`  | `/api/v1/auth/refresh`                    |
 | `POST`  | `/api/v1/auth/logout`                     |
 | `GET`   | `/api/v1/auth/me`                         |
@@ -27,7 +26,6 @@ Authentication, the signed-in user's own data (`/me`), users, financial profiles
 | `PATCH` | `/api/v1/me/goals/:goalId`                |
 | `GET`   | `/api/v1/me/financial-context`            |
 | `GET`   | `/api/v1/me/literacy-context`             |
-| `POST`  | `/api/v1/users`                           |
 | `GET`   | `/api/v1/users/:userId`                   |
 | `PATCH` | `/api/v1/users/:userId`                   |
 | `GET`   | `/api/v1/users/:userId/financial-profile` |

@@ -538,10 +538,10 @@ describe("aggregation", () => {
 
   it("aggregates literacy progress and current profile levels, counts only", async () => {
     const user = await api.prisma.user.create({
-      data: { phoneNumber: "+94000000501", preferredLanguage: "EN" },
+      data: { preferredLanguage: "EN" },
     });
     const other = await api.prisma.user.create({
-      data: { phoneNumber: "+94000000502", preferredLanguage: "SI" },
+      data: { preferredLanguage: "SI" },
     });
     await api.prisma.financialLiteracyProfile.create({
       data: { userId: user.id, level: "DEVELOPING", assessedAt: new Date("2026-09-01T00:00:00Z") },
@@ -711,7 +711,7 @@ describe("instrumentation", () => {
   it("records one privacy-safe event per operation, without content", async () => {
     await seedKnowledge(api.prisma);
     const user = await api.prisma.user.create({
-      data: { phoneNumber: "+94000000601", preferredLanguage: "TA" },
+      data: { preferredLanguage: "TA" },
     });
     script = toolsThenAnswer([
       ["calculate_loan", { principal: "500000.00", annualInterestRate: "12.00", termMonths: 36 }],
@@ -882,7 +882,7 @@ describe("instrumentation", () => {
   it("keeps every feature working when analytics cannot be stored", async () => {
     await seedKnowledge(api.prisma);
     const user = await api.prisma.user.create({
-      data: { phoneNumber: "+94000000701", preferredLanguage: "EN" },
+      data: { preferredLanguage: "EN" },
     });
     script = toolsThenAnswer([]);
     const failuresBefore = recorder().failuresSinceStart;
@@ -946,7 +946,7 @@ describe("retention cleanup", () => {
   it("deletes only analytics events older than the retention period, and nothing else", async () => {
     await seedKnowledge(api.prisma);
     const user = await api.prisma.user.create({
-      data: { phoneNumber: "+94000000801", preferredLanguage: "EN" },
+      data: { preferredLanguage: "EN" },
     });
     await api.prisma.financialLiteracyProfile.create({ data: { userId: user.id } });
     const now = new Date("2026-09-27T12:00:00Z");

@@ -25,25 +25,8 @@ export const GOAL_STATUS_OPTIONS: readonly { value: FinancialGoalStatus; label: 
 
 /** Mirrors AUTH_ERROR_MESSAGES in @finvoice/contracts (the API's exact messages). */
 export const AUTH_API_MESSAGES = {
-  invalidCode: "The verification code is invalid or has expired",
   authenticationFailed: "Authentication failed",
 } as const;
-
-/** Mirrors OTP_CODE_LENGTH in @finvoice/contracts. */
-export const OTP_CODE_LENGTH = 8;
-
-/**
- * The API's default attempts per code (AUTH_OTP_MAX_ATTEMPTS). Used only to word the message after
- * repeated failures; the API enforces the real limit, whatever its configuration.
- */
-export const OTP_ATTEMPTS_HINT = 5;
-
-/**
- * Client-side pause before "Send a new code" is enabled again: a convenience that avoids using up
- * the API's per-number request limit (3 per 15 minutes by default) by accident. Not a security
- * control.
- */
-export const RESEND_COOLDOWN_SECONDS = 30;
 
 export function languageLabel(language: Language): string {
   return LANGUAGE_OPTIONS.find((option) => option.value === language)?.label ?? language;

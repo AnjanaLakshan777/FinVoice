@@ -10,10 +10,6 @@ import {
   truncateAllTables,
 } from "./database.js";
 
-// Fake phone numbers: "+94" followed by 0 is never assigned in Sri Lanka's numbering plan.
-const PHONE_A = "+94000000101";
-const PHONE_B = "+94000000102";
-
 const prisma = createTestPrismaClient();
 
 afterAll(async () => {
@@ -26,7 +22,7 @@ beforeEach(async () => {
 
 function createUser(overrides: Partial<Prisma.UserCreateInput> = {}) {
   return prisma.user.create({
-    data: { phoneNumber: PHONE_A, preferredLanguage: "SI", ...overrides },
+    data: { preferredLanguage: "SI", ...overrides },
   });
 }
 
@@ -54,7 +50,6 @@ describe("User", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
     expect(user).toMatchObject({
-      phoneNumber: PHONE_A,
       displayName: "Demo User",
       preferredLanguage: "TA",
       timezone: "Asia/Colombo",
@@ -64,17 +59,13 @@ describe("User", () => {
     expect(user.updatedAt).toBeInstanceOf(Date);
   });
 
-  it("rejects a duplicate phone number", async () => {
-    await createUser();
+  it("has no phone number or other contact identifier", async () => {
+    const user = await createUser();
 
-    await expectDatabaseError(createUser({ preferredLanguage: "EN" }), { code: "P2002" });
-  });
-
-  it("rejects a phone number that is not in E.164 format", async () => {
-    await expectCheckViolation(
-      createUser({ phoneNumber: "0771234567" }),
-      "users_phone_number_e164_check",
-    );
+    expect(Object.keys(user)).not.toContain("phoneNumber");
+    const columns = await prisma.$queryRaw<{ column_name: string }[]>`
+      SELECT column_name FROM information_schema.columns WHERE table_name = 'users'`;
+    expect(columns.map((column) => column.column_name)).not.toContain("phone_number");
   });
 
   it("rejects a blank display name", async () => {
@@ -241,7 +232,7 @@ describe("foreign keys", () => {
 
   it("delete a user's profile and goals together with the user", async () => {
     const user = await createUser();
-    const other = await createUser({ phoneNumber: PHONE_B });
+    const other = await createUser();
     await prisma.financialProfile.create({ data: { userId: user.id } });
     await createGoal(user.id);
     await createGoal(other.id);

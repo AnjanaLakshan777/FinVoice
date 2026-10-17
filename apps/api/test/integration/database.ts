@@ -11,7 +11,7 @@ export function createTestPrismaClient(): PrismaClient {
 export async function truncateAllTables(prisma: PrismaClient): Promise<void> {
   await prisma.$executeRaw`
     TRUNCATE TABLE "analytics_events", "financial_literacy_topic_progress", "financial_literacy_profiles",
-      "financial_goals", "financial_profiles", "otp_challenges", "auth_sessions", "users",
+      "financial_goals", "financial_profiles", "auth_sessions", "users",
       "knowledge_article_translations", "knowledge_articles", "knowledge_sources"`;
 }
 

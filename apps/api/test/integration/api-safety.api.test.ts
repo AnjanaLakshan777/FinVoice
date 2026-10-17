@@ -1,6 +1,4 @@
-import { randomUUID } from "node:crypto";
-
-import type { ApiErrorResponse, UserResponse } from "@finvoice/contracts";
+import type { ApiErrorResponse } from "@finvoice/contracts";
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
 
 import { startTestApi, type TestApi } from "./api-app.js";
@@ -10,13 +8,11 @@ const WRONG_PASSWORD = "Wr0ng-Secret-Pw";
 const SOME_USER_ID = "00000000-0000-7000-8000-000000000001";
 
 let api: TestApi;
-/** Access tokens (validly signed): an administrator, and the user SOME_USER_ID. */
-let admin: Record<string, string>;
+/** A validly signed access token for the user SOME_USER_ID. */
 let someUser: Record<string, string>;
 
 beforeAll(async () => {
   api = await startTestApi();
-  admin = await api.authHeaders(randomUUID(), "ADMIN");
   someUser = await api.authHeaders(SOME_USER_ID);
 });
 
@@ -42,7 +38,7 @@ function leakCandidates(databaseUrl: string): string[] {
     "SELECT",
     "INSERT",
     "violates",
-    "users_phone_number_key",
+    "_pkey",
     "_check",
     "_fkey",
     "    at ",
@@ -56,19 +52,6 @@ function expectNoLeaks(text: string, databaseUrl: string): void {
 }
 
 describe("error safety", () => {
-  it("turns a database unique violation into 409, even for concurrent requests", async () => {
-    const body = { phoneNumber: "+94000000501", preferredLanguage: "SI" };
-
-    // Both requests pass validation; the database's unique index decides which one wins.
-    const responses = await Promise.all([
-      api.request<UserResponse>("POST", "/api/v1/users", body, admin),
-      api.request<UserResponse>("POST", "/api/v1/users", body, admin),
-    ]);
-
-    expect(responses.map((response) => response.status).sort()).toEqual([201, 409]);
-    expect(await api.prisma.user.count()).toBe(1);
-  });
-
   it.each([
     ["GET", "/api/v1/users/123"],
     ["PATCH", "/api/v1/users/123"],
@@ -86,13 +69,7 @@ describe("error safety", () => {
   });
 
   it("never exposes database details or credentials in error responses", async () => {
-    const created = await api.request<UserResponse>(
-      "POST",
-      "/api/v1/users",
-      { phoneNumber: "+94000000502", preferredLanguage: "TA" },
-      admin,
-    );
-    const userId = created.body.id;
+    const userId = (await api.prisma.user.create({ data: { preferredLanguage: "TA" } })).id;
     const own = await api.authHeaders(userId);
     const goal = await api.request<{ id: string }>(
       "POST",
@@ -103,13 +80,7 @@ describe("error safety", () => {
     const unknownId = "00000000-0000-7000-8000-00000000dead";
 
     const responses = await Promise.all([
-      api.request(
-        "POST",
-        "/api/v1/users",
-        { phoneNumber: "+94000000502", preferredLanguage: "SI" },
-        admin,
-      ),
-      api.request("POST", "/api/v1/users", { phoneNumber: "bad", isAdmin: true }, admin),
+      api.request("POST", "/api/v1/auth/guest", { preferredLanguage: "bad", isAdmin: true }),
       api.request("GET", `/api/v1/users/${unknownId}`, undefined, await api.authHeaders(unknownId)),
       api.request("PUT", `/api/v1/users/${userId}/financial-profile`, { monthlyIncome: "-1" }, own),
       api.request(
@@ -121,7 +92,7 @@ describe("error safety", () => {
       api.request("GET", "/api/v1/unknown-route"),
     ]);
 
-    expect(responses.map((response) => response.status)).toEqual([409, 400, 404, 400, 400, 404]);
+    expect(responses.map((response) => response.status)).toEqual([400, 404, 400, 400, 404]);
     for (const response of responses) {
       expectNoLeaks(response.text, inject("databaseUrl"));
     }

@@ -2,13 +2,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import type { ApiConfig } from "@finvoice/config";
 import {
-  requestOtpRequestSchema,
-  verifyOtpRequestSchema,
+  startGuestSessionRequestSchema,
   type AuthMeResponse,
   type AuthTokenResponse,
-  type RequestOtpRequest,
-  type RequestOtpResponse,
-  type VerifyOtpCommand,
+  type StartGuestSessionCommand,
 } from "@finvoice/contracts";
 import {
   Body,
@@ -22,6 +19,7 @@ import {
   Res,
 } from "@nestjs/common";
 
+import { ApiException, apiError } from "../common/api.exception.js";
 import { API_CONFIG } from "../config/api-config.module.js";
 import { CurrentUser, Public } from "./auth.decorators.js";
 import { AuthService } from "./auth.service.js";
@@ -34,7 +32,8 @@ import {
 } from "./refresh-cookie.js";
 
 /**
- * /api/v1/auth: phone-OTP sign-in, refresh-token rotation, logout and identity.
+ * /api/v1/auth: guest sign-in, refresh-token rotation, logout (which deletes the guest account)
+ * and identity.
  *
  * The refresh token only ever travels in the HttpOnly cookie (Path=/api/v1/auth), never in a JSON
  * body; the access token is returned in the body and sent back as `Authorization: Bearer`.
@@ -50,23 +49,33 @@ export class AuthController {
     this.cookie = config.auth.refreshCookie;
   }
 
+  /**
+   * Creates a guest account from a preferred language (and an optional name) and signs it in.
+   * No phone number, code or password.
+   *
+   * JSON only (415 otherwise). An HTML form on another site could otherwise post here and replace
+   * the visitor's refresh cookie with a new, empty account (login CSRF), cutting them off from
+   * their own. A browser can send a JSON body cross-site only after a CORS preflight, which the
+   * API never allows.
+   */
   @Public()
-  @Post("request-otp")
-  @HttpCode(HttpStatus.ACCEPTED)
-  requestOtp(
-    @Body({ schema: requestOtpRequestSchema }) body: RequestOtpRequest,
-  ): Promise<RequestOtpResponse> {
-    return this.auth.requestOtp(body.phoneNumber);
-  }
-
-  @Public()
-  @Post("verify-otp")
-  @HttpCode(HttpStatus.OK)
-  async verifyOtp(
-    @Body({ schema: verifyOtpRequestSchema }) body: VerifyOtpCommand,
+  @Post("guest")
+  @HttpCode(HttpStatus.CREATED)
+  async guest(
+    @Req() request: IncomingMessage,
+    @Body({ schema: startGuestSessionRequestSchema }) body: StartGuestSessionCommand,
     @Res({ passthrough: true }) response: ServerResponse,
   ): Promise<AuthTokenResponse> {
-    const { body: tokens, session } = await this.auth.verifyOtp(body);
+    if (!/^application\/json(\s*;|$)/iu.test(request.headers["content-type"] ?? "")) {
+      throw new ApiException(
+        apiError(
+          HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+          "UNSUPPORTED_MEDIA_TYPE",
+          "Unsupported content type",
+        ),
+      );
+    }
+    const { body: tokens, session } = await this.auth.startGuestSession(body);
     setRefreshCookie(response, this.cookie, session.refreshToken, this.auth.refreshTokenTtlSeconds);
     return tokens;
   }
@@ -99,7 +108,10 @@ export class AuthController {
     }
   }
 
-  /** Revokes the current sign-in (its whole token family) and clears the cookie. */
+  /**
+   * Ends the guest session and deletes the guest account with all of its data (an ADMIN account
+   * only signs out), then clears the cookie.
+   */
   @Post("logout")
   @HttpCode(HttpStatus.NO_CONTENT)
   async logout(

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { ApiConfig, AuthConfig } from "@finvoice/config";
-import type { AuthTokenResponse, RequestOtpResponse, UserRole } from "@finvoice/contracts";
+import type { AuthTokenResponse, StartGuestSessionRequest, UserRole } from "@finvoice/contracts";
 import type { LoggerService } from "@nestjs/common";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { Test } from "@nestjs/testing";
@@ -11,15 +11,13 @@ import { LANGUAGE_MODEL, type LanguageModel } from "../../src/ai/model/language-
 import { AppModule } from "../../src/app.module.js";
 import { configureApp } from "../../src/app.setup.js";
 import { AccessTokenService } from "../../src/auth/access-token.service.js";
-import { OTP_DELIVERY } from "../../src/auth/auth.service.js";
-import type { OtpDeliveryProvider } from "../../src/auth/otp-delivery.js";
 import { API_CONFIG } from "../../src/config/api-config.module.js";
 import { PrismaService } from "../../src/database/prisma.service.js";
 import { testAuthConfig } from "../support/auth.js";
 
 export type ApiResponse<T = unknown> = { status: number; body: T; text: string; headers: Headers };
 
-/** A completed phone-OTP sign-in. */
+/** A completed guest sign-in. */
 export type SignedIn = {
   accessToken: string;
   /** `finvoice_refresh=<token>`, ready for a Cookie header. */
@@ -38,6 +36,13 @@ export type TestApi = {
     body?: unknown,
     headers?: Record<string, string>,
   ): Promise<ApiResponse<T>>;
+  /** Sends `body` exactly as given (no JSON encoding), e.g. an HTML form submission. */
+  requestRaw(
+    method: string,
+    path: string,
+    body: string,
+    headers: Record<string, string>,
+  ): Promise<ApiResponse>;
   close(): Promise<void>;
   /** The authentication settings the application runs with (ephemeral test secrets). */
   auth: AuthConfig;
@@ -46,8 +51,8 @@ export type TestApi = {
    * user had signed in (the guard does not look the session up).
    */
   authHeaders(userId: string, role?: UserRole): Promise<Record<string, string>>;
-  /** Full phone-OTP sign-in through the HTTP API with the development code. */
-  signIn(phoneNumber: string, registration?: Record<string, unknown>): Promise<SignedIn>;
+  /** A guest sign-in through the HTTP API (a new account each time; default language EN). */
+  signIn(request?: Partial<StartGuestSessionRequest>): Promise<SignedIn>;
 };
 
 export type TestApiOptions = {
@@ -60,10 +65,8 @@ export type TestApiOptions = {
   internalToken?: string;
   /** Receives everything the application logs; by default logging is off. */
   logger?: LoggerService;
-  /** Authentication settings; by default enabled with fresh random secrets and dev OTP code. */
+  /** Authentication settings; by default enabled with a fresh random secret. */
   auth?: AuthConfig;
-  /** Replaces the configured OTP delivery provider (e.g. a recording or failing SMS double). */
-  otpDelivery?: OtpDeliveryProvider;
 };
 
 /**
@@ -78,7 +81,6 @@ export async function startTestApi(options: TestApiOptions | string = {}): Promi
     internalToken,
     logger,
     auth = testAuthConfig(),
-    otpDelivery,
   } = typeof options === "string" ? { databaseUrl: options } : options;
   const config: ApiConfig = {
     nodeEnv: "test",
@@ -96,9 +98,6 @@ export async function startTestApi(options: TestApiOptions | string = {}): Promi
   if (languageModel) {
     builder = builder.overrideProvider(LANGUAGE_MODEL).useValue(languageModel);
   }
-  if (otpDelivery) {
-    builder = builder.overrideProvider(OTP_DELIVERY).useValue(otpDelivery);
-  }
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: logger ?? false });
   await configureApp(app);
@@ -115,24 +114,13 @@ export async function startTestApi(options: TestApiOptions | string = {}): Promi
         .issue({ userId, role, sessionId: randomUUID() });
       return { authorization: `Bearer ${token}` };
     },
-    async signIn(phoneNumber, registration = {}) {
-      const code = auth.otp.devCode;
-      if (code === null) {
-        throw new Error("signIn needs the development OTP provider");
-      }
-      const challenge = await api.request<RequestOtpResponse>("POST", "/api/v1/auth/request-otp", {
-        phoneNumber,
+    async signIn(request = {}) {
+      const verified = await api.request<AuthTokenResponse>("POST", "/api/v1/auth/guest", {
+        preferredLanguage: "EN",
+        ...request,
       });
-      if (challenge.status !== 202) {
-        throw new Error(`request-otp answered ${String(challenge.status)}`);
-      }
-      const verified = await api.request<AuthTokenResponse>("POST", "/api/v1/auth/verify-otp", {
-        challengeId: challenge.body.challengeId,
-        code,
-        ...registration,
-      });
-      if (verified.status !== 200) {
-        throw new Error(`verify-otp answered ${String(verified.status)}`);
+      if (verified.status !== 201) {
+        throw new Error(`guest sign-in answered ${String(verified.status)}`);
       }
       return {
         accessToken: verified.body.accessToken,
@@ -159,6 +147,16 @@ export async function startTestApi(options: TestApiOptions | string = {}): Promi
       return {
         status: response.status,
         body: (text ? JSON.parse(text) : undefined) as T,
+        text,
+        headers: response.headers,
+      };
+    },
+    async requestRaw(method, path, body, headers) {
+      const response = await fetch(new URL(path, baseUrl), { method, headers, body });
+      const text = await response.text();
+      return {
+        status: response.status,
+        body: (text ? JSON.parse(text) : undefined) as unknown,
         text,
         headers: response.headers,
       };

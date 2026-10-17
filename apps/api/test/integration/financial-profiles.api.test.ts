@@ -22,7 +22,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await truncateAllTables(api.prisma);
   const user = await api.prisma.user.create({
-    data: { phoneNumber: "+94000000301", preferredLanguage: "EN" },
+    data: { preferredLanguage: "EN" },
   });
   userId = user.id;
   headers = await api.authHeaders(userId);
@@ -166,7 +166,7 @@ describe("GET /api/v1/users/:userId/financial-profile", () => {
 describe("financial profile authorization", () => {
   async function otherUser() {
     const other = await api.prisma.user.create({
-      data: { phoneNumber: "+94000000302", preferredLanguage: "SI" },
+      data: { preferredLanguage: "SI" },
     });
     await api.prisma.financialProfile.create({
       data: { userId: other.id, monthlyIncome: "250000.00", monthlyExpenses: "120000.00" },

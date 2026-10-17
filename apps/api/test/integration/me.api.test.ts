@@ -16,9 +16,6 @@ import { truncateAllTables } from "./database.js";
 
 /** Test-only token; never a real secret. */
 const INTERNAL_TOKEN = "internal-test-token-for-me-endpoints-0123456789";
-// Fake phone numbers: "+94" followed by 0 is never assigned in Sri Lanka's numbering plan.
-const PHONE_A = "+94000000701";
-const PHONE_B = "+94000000702";
 
 const ME_ROUTES: [string, string, unknown?][] = [
   ["GET", "/api/v1/me"],
@@ -50,12 +47,12 @@ beforeEach(async () => {
   await truncateAllTables(api.prisma);
   userA = (
     await api.prisma.user.create({
-      data: { phoneNumber: PHONE_A, preferredLanguage: "SI", displayName: "Kamal" },
+      data: { preferredLanguage: "SI", displayName: "Kamal" },
     })
   ).id;
   userB = (
     await api.prisma.user.create({
-      data: { phoneNumber: PHONE_B, preferredLanguage: "TA", displayName: "Nimal" },
+      data: { preferredLanguage: "TA", displayName: "Nimal" },
     })
   ).id;
   asA = await api.authHeaders(userA);
@@ -111,7 +108,7 @@ describe("/api/v1/me access", () => {
     const response = await api.request("GET", `/api/v1/me/${userB}`, undefined, asA);
 
     expect(response.status).toBe(404);
-    expect(response.text).not.toContain(PHONE_B);
+    expect(response.text).not.toContain("Nimal");
   });
 });
 
@@ -120,7 +117,8 @@ describe("GET and PATCH /api/v1/me", () => {
     const response = await me<UserResponse>("GET", "");
 
     expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ id: userA, displayName: "Kamal", phoneNumber: PHONE_A });
+    expect(response.body).toMatchObject({ id: userA, displayName: "Kamal" });
+    expect(response.body).not.toHaveProperty("phoneNumber");
   });
 
   it("updates the caller's display name and language only", async () => {
@@ -150,7 +148,7 @@ describe("GET and PATCH /api/v1/me", () => {
       expect(await api.prisma.user.findUniqueOrThrow({ where: { id: userA } })).toMatchObject({
         role: "USER",
         status: "ACTIVE",
-        phoneNumber: PHONE_A,
+        displayName: "Kamal",
       });
     },
   );

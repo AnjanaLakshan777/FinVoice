@@ -1,4 +1,4 @@
-import type { CreateUserCommand, UpdateUserCommand, UserResponse } from "@finvoice/contracts";
+import type { UpdateUserCommand, UserResponse } from "@finvoice/contracts";
 import { Injectable } from "@nestjs/common";
 
 import { ApiException } from "../common/api.exception.js";
@@ -11,21 +11,6 @@ import type { User } from "../generated/prisma/client.js";
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(command: CreateUserCommand): Promise<UserResponse> {
-    try {
-      const user = await this.prisma.user.create({
-        data: {
-          phoneNumber: command.phoneNumber,
-          preferredLanguage: command.preferredLanguage,
-          displayName: command.displayName ?? null,
-        },
-      });
-      return toUserResponse(user);
-    } catch (error) {
-      throw mapPhoneNumberConflict(error);
-    }
-  }
-
   async get(userId: string): Promise<UserResponse> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
@@ -35,8 +20,8 @@ export class UsersService {
   }
 
   /**
-   * Self-service changes only: display name and language. The phone number (the login identity),
-   * the role and the status are not changeable through the API.
+   * Self-service changes only: display name and language. The role and the status are not
+   * changeable through the API.
    */
   async update(userId: string, command: UpdateUserCommand): Promise<UserResponse> {
     try {
@@ -69,20 +54,9 @@ export function userNotFound(): ApiException {
   return ApiException.notFound("User not found");
 }
 
-function mapPhoneNumberConflict(error: unknown): unknown {
-  // phone_number is the only unique column an (admin) client can set on users.
-  if (isPrismaError(error, "P2002")) {
-    return ApiException.conflict("A user with this phone number already exists", [
-      { field: "phoneNumber", message: "Already registered to another user" },
-    ]);
-  }
-  return error;
-}
-
 function toUserResponse(user: User): UserResponse {
   return {
     id: user.id,
-    phoneNumber: user.phoneNumber,
     displayName: user.displayName,
     preferredLanguage: user.preferredLanguage,
     timezone: user.timezone,

@@ -13,7 +13,6 @@ import { UNASSESSED_LITERACY_PROFILE } from "../../src/financial-literacy/financ
 
 const USER: UserResponse = {
   id: "0190f0a0-0000-7000-8000-000000000001",
-  phoneNumber: "+94000000123",
   displayName: "Private Name",
   preferredLanguage: "SI",
   timezone: "Asia/Colombo",
@@ -110,15 +109,9 @@ describe("toFinancialContext", () => {
     });
   });
 
-  it("never includes ids, phone number, display name or record timestamps", () => {
+  it("never includes ids, display name or record timestamps", () => {
     const text = JSON.stringify(context());
-    for (const value of [
-      USER.id,
-      GOAL.id,
-      USER.phoneNumber,
-      "Private Name",
-      "2026-01-02T00:00:00.000Z",
-    ]) {
+    for (const value of [USER.id, GOAL.id, "Private Name", "2026-01-02T00:00:00.000Z"]) {
       expect(text).not.toContain(value);
     }
   });

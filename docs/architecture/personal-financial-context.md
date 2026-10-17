@@ -93,13 +93,13 @@ The context is built by an explicit field-by-field mapper ([financial-context.ma
 - **Included:** preferred language, timezone, income, expenses, currency, active goals (type, name, amounts, target date, currency, status), literacy level, assessment version and date, and stored topic status with last activity.
 - **Excluded:**
   - all database ids, including the user id;
-  - phone number, display name and account status;
+  - display name and account status (FinVoice stores no phone numbers);
   - record `createdAt`/`updatedAt`;
   - completed and cancelled goals;
   - chats, transcripts and knowledge search history;
   - credentials, cards, PINs, OTPs and bank logins, which FinVoice does not store anyway.
 
-Tests check the response for ids, phone number, display name and the internal token.
+Tests check the response for ids, display name and the internal token.
 
 ## 7. Internal API
 
@@ -120,7 +120,7 @@ INTERNAL and token-protected, outside the public `/api/v1` API (all `/internal/*
   - `404` for an unknown user;
   - `409` for a disallowed transition.
 - **Bodies.** Error bodies use the standard format and contain no user data, ids, stack traces or secrets.
-- **Deliberately small.** There is no generic user CRUD and no way to change income, expenses, goals or phone numbers here.
+- **Deliberately small.** There is no generic user CRUD and no way to change income, expenses or goals here.
 
 ## 8. `INTERNAL_API_TOKEN`
 

@@ -9,10 +9,6 @@ import {
   truncateAllTables,
 } from "./database.js";
 
-// Fake phone numbers: "+94" followed by 0 is never assigned in Sri Lanka's numbering plan.
-const PHONE_A = "+94000000801";
-const PHONE_B = "+94000000802";
-
 const prisma = createTestPrismaClient();
 
 afterAll(async () => {
@@ -23,8 +19,8 @@ beforeEach(async () => {
   await truncateAllTables(prisma);
 });
 
-function createUser(phoneNumber = PHONE_A) {
-  return prisma.user.create({ data: { phoneNumber, preferredLanguage: "EN" } });
+function createUser() {
+  return prisma.user.create({ data: { preferredLanguage: "EN" } });
 }
 
 const T1 = new Date("2026-09-01T10:00:00.000Z");
@@ -129,8 +125,8 @@ describe("financial_literacy_topic_progress", () => {
   });
 
   it("allows the same topic for different users", async () => {
-    const a = await createUser(PHONE_A);
-    const b = await createUser(PHONE_B);
+    const a = await createUser();
+    const b = await createUser();
     for (const user of [a, b]) {
       await prisma.financialLiteracyTopicProgress.create({
         data: {

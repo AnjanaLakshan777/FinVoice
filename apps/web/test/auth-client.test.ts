@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError, AuthClient, SessionExpiredError } from "../lib/auth/auth-client";
 import { apiError, FakeApi, ME, tokens } from "./support/fake-api";
 
-const CHALLENGE_ID = "5d3c2f0e-8f7a-4b1e-9c6d-2a1b0c9d8e7f";
 const INVALID_TOKEN = apiError(401, "UNAUTHORIZED", "Missing or invalid access token");
 const INVALID_REFRESH = apiError(401, "UNAUTHORIZED", "Invalid or expired refresh token");
 
@@ -23,53 +22,34 @@ function apiAccepting(valid: string): FakeApi {
 }
 
 async function signedIn(api: FakeApi, accessToken: string): Promise<AuthClient> {
-  api.on("POST", "/auth/verify-otp", { status: 200, body: tokens(accessToken) });
+  api.on("POST", "/auth/guest", { status: 201, body: tokens(accessToken) });
   const client = api.client();
-  await client.verifyOtp({ challengeId: CHALLENGE_ID, code: "12345678" });
+  await client.startGuestSession({ preferredLanguage: "SI" });
   return client;
 }
 
 describe("sign-in", () => {
-  it("requests a code with only the phone number, through the same-origin proxy", async () => {
-    const api = new FakeApi().on("POST", "/auth/request-otp", {
-      status: 202,
-      body: { challengeId: CHALLENGE_ID, expiresIn: 300, message: "…" },
-    });
+  it("starts a guest session with only the language and name, through the same-origin proxy", async () => {
+    const api = new FakeApi().on("POST", "/auth/guest", { status: 201, body: tokens("access-1") });
 
-    const response = await api.client().requestOtp("+94771234567");
+    const user = await api
+      .client()
+      .startGuestSession({ preferredLanguage: "TA", displayName: "Kamal" });
 
-    expect(response.challengeId).toBe(CHALLENGE_ID);
+    expect(user).toEqual(tokens("access-1").user);
     expect(api.calls).toEqual([
       {
         method: "POST",
-        path: "/auth/request-otp",
+        path: "/auth/guest",
         headers: { accept: "application/json", "content-type": "application/json" },
-        body: { phoneNumber: "+94771234567" },
+        body: { preferredLanguage: "TA", displayName: "Kamal" },
         credentials: "same-origin",
         keepalive: undefined,
       },
     ]);
   });
 
-  it("reports an invalid phone number as the API's 400", async () => {
-    const api = new FakeApi().on(
-      "POST",
-      "/auth/request-otp",
-      apiError(400, "VALIDATION_ERROR", "Request validation failed", [
-        { field: "phoneNumber", message: "Must be an E.164 phone number" },
-      ]),
-    );
-
-    const error = await api
-      .client()
-      .requestOtp("0771234567")
-      .catch((caught: unknown) => caught);
-
-    expect(error).toBeInstanceOf(ApiError);
-    expect(error).toMatchObject({ status: 400, code: "VALIDATION_ERROR" });
-  });
-
-  it("verifies a code and keeps the access token only in memory", async () => {
+  it("keeps the access token only in memory", async () => {
     const api = apiAccepting("access-1");
     const setItem = vi.spyOn(Storage.prototype, "setItem");
     const log = vi.spyOn(console, "log");
@@ -89,19 +69,20 @@ describe("sign-in", () => {
     expect(Object.keys(client)).toEqual([]);
   });
 
-  it("rejects an invalid code without storing anything", async () => {
+  it("reports a refused sign-in as the API's error without storing anything", async () => {
     const api = new FakeApi().on(
       "POST",
-      "/auth/verify-otp",
-      apiError(401, "UNAUTHORIZED", "The verification code is invalid or has expired"),
+      "/auth/guest",
+      apiError(429, "TOO_MANY_REQUESTS", "FinVoice is busy. Try again in a minute."),
     );
     const client = api.client();
 
     const error = await client
-      .verifyOtp({ challengeId: CHALLENGE_ID, code: "00000000" })
+      .startGuestSession({ preferredLanguage: "EN" })
       .catch((caught: unknown) => caught);
 
-    expect(error).toMatchObject({ status: 401, code: "UNAUTHORIZED" });
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ status: 429, code: "TOO_MANY_REQUESTS" });
     expect(client.hasAccessToken).toBe(false);
   });
 });
@@ -284,8 +265,8 @@ describe("logout", () => {
 
   it("signs out locally even if the API cannot be reached", async () => {
     let online = true;
-    const api = new FakeApi().on("POST", "/auth/verify-otp", {
-      status: 200,
+    const api = new FakeApi().on("POST", "/auth/guest", {
+      status: 201,
       body: tokens("access-1"),
     });
     const client = new AuthClient({
@@ -293,7 +274,7 @@ describe("logout", () => {
         online ? api.fetch(input, init) : Promise.reject(new TypeError("offline")),
       withLock: null,
     });
-    await client.verifyOtp({ challengeId: CHALLENGE_ID, code: "12345678" });
+    await client.startGuestSession({ preferredLanguage: "EN" });
     online = false;
 
     await client.logout();
