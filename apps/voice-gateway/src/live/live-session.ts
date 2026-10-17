@@ -1,12 +1,17 @@
-import type { VoiceToolDeclaration } from "@finvoice/contracts";
+import type { AgentLanguage, VoiceToolDeclaration } from "@finvoice/contracts";
 
 /**
  * Provider-neutral view of a real-time voice model session. The voice session logic depends only
  * on these types; the Gemini Live adapter (gemini-live-connector.ts) is the one implementation.
  */
 
-/** Server-controlled inputs of a Live session. Nothing here comes from the browser. */
+/**
+ * Server-controlled inputs of a Live session. Nothing here comes from the browser except the
+ * session language, which the gateway has already validated against the supported languages.
+ */
 export type LiveSessionSetup = {
+  /** The session language: the answer language, and a hint for input transcription. */
+  language: AgentLanguage;
   systemInstruction: string;
   tools: VoiceToolDeclaration[];
   /** Handle of an earlier session to resume, or null for a new session. */

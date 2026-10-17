@@ -433,7 +433,12 @@ export class VoiceSession {
     const setup = this.requireSetup();
     const generation = ++this.generation;
     return this.options.connector.connect(
-      { systemInstruction: setup.systemInstruction, tools: setup.tools, resumptionHandle },
+      {
+        language: this.requireLanguage(),
+        systemInstruction: setup.systemInstruction,
+        tools: setup.tools,
+        resumptionHandle,
+      },
       {
         onEvent: (event) => {
           this.onLiveEvent(generation, event);

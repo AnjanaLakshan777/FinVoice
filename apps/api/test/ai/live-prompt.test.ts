@@ -65,6 +65,37 @@ describe("buildLiveSystemInstruction", () => {
       expect(instruction).toContain("add a simple Sinhala explanation");
     });
 
+    it("asks for friendly spoken Sinhala (ඔයා, spoken verb forms and words)", () => {
+      const instruction = buildLiveSystemInstruction("SI");
+      expect(instruction).toContain("Talk to the user as ඔයා");
+      expect(instruction).toContain("Do not use ඔබ, ඔබේ, ඔබට or ඔබතුමා");
+      expect(instruction).toContain("Never use written forms such as වේ, ඇත");
+      expect(instruction).toContain("මේක (not මෙය)");
+      expect(instruction).toContain("do not begin every answer the same way");
+      expect(instruction).toContain("ඕනේ (not අවශ්‍ය)");
+    });
+
+    it("answers in Sinhala from FinVoice's own point of view, not by echoing the user", () => {
+      const instruction = buildLiveSystemInstruction("SI");
+      expect(instruction).toContain("Answer from your own point of view");
+      expect(instruction).toContain('answer "ඔව්, මට ඔයාව හොඳට ඇහෙනවා.');
+      expect(instruction).toContain('never "ඔයාට මාව ඇහෙනවා"');
+    });
+
+    it("keeps spoken Sinhala amounts exact", () => {
+      const instruction = buildLiveSystemInstruction("SI");
+      expect(instruction).toContain("with every rupee and cent exactly as the tool returned it");
+      expect(instruction).toContain(
+        '527495.32 is "රුපියල් ලක්ෂ පහයි විසි හත්දාස් හාරසිය අනූ පහයි, සත තිස් දෙකයි"',
+      );
+    });
+
+    it("keeps the Sinhala-only guidance out of the other languages", () => {
+      for (const language of ["EN", "TA"] as const) {
+        expect(buildLiveSystemInstruction(language)).not.toContain("ඔයා");
+      }
+    });
+
     it("asks for natural conversational Tamil rather than literary Tamil", () => {
       const instruction = buildLiveSystemInstruction("TA");
       expect(instruction).toContain("natural, everyday Tamil");

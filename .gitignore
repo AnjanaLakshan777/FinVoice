@@ -29,3 +29,6 @@ Thumbs.db
 
 # Generated code (recreated by `prisma generate` on install and build)
 apps/api/src/generated/
+
+CLAUDE.md
+DECISIONS.md

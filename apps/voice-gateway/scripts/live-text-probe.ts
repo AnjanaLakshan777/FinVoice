@@ -132,7 +132,12 @@ async function probe(
   const session = await new GoogleGenAI({ apiKey }).live.connect({
     model: config.gemini.liveModel,
     config: buildLiveConnectConfig(
-      { systemInstruction: setup.systemInstruction, tools: setup.tools, resumptionHandle: null },
+      {
+        language,
+        systemInstruction: setup.systemInstruction,
+        tools: setup.tools,
+        resumptionHandle: null,
+      },
       config.gemini.liveVoice,
     ),
     callbacks: {

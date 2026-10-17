@@ -25,6 +25,7 @@ import {
 const FAKE_KEY = "fake-gemini-key-for-tests-only";
 
 const SETUP: LiveSessionSetup = {
+  language: "TA",
   systemInstruction: "You are FinVoice. RESPOND IN TAMIL.",
   tools: [
     {
@@ -141,9 +142,18 @@ describe("Live session configuration", () => {
     ]);
   });
 
+  it.each([
+    ["SI", { languageCodes: ["si-LK"] }],
+    ["TA", { languageCodes: ["ta-LK"] }],
+    ["EN", {}],
+  ] as const)("hints the input transcription language for %s", (language, expected) => {
+    const config = buildLiveConnectConfig({ ...SETUP, language }, "Kore");
+    expect(config.inputAudioTranscription).toEqual(expected);
+  });
+
   it("enables transcription, resumption and context compression, and keeps automatic VAD", () => {
     const config = buildLiveConnectConfig(SETUP, "Kore");
-    expect(config.inputAudioTranscription).toEqual({});
+    expect(config.inputAudioTranscription).toEqual({ languageCodes: ["ta-LK"] });
     expect(config.outputAudioTranscription).toEqual({});
     expect(config.sessionResumption).toEqual({});
     expect(config.contextWindowCompression).toEqual({ slidingWindow: {} });

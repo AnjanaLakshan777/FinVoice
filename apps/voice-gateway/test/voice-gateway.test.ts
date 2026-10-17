@@ -219,6 +219,7 @@ describe("session lifecycle", () => {
     expect(backend.setupRequests).toEqual(["SI"]);
     expect(connector.setups).toEqual([
       {
+        language: "SI",
         systemInstruction: `${TEST_SYSTEM_INSTRUCTION} (SI)`,
         tools: [expect.objectContaining({ name: "calculate_loan" })],
         resumptionHandle: null,

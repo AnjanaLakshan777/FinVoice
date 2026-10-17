@@ -1,8 +1,9 @@
-import { VOICE_INPUT_MIME_TYPE } from "@finvoice/contracts";
+import { VOICE_INPUT_MIME_TYPE, type AgentLanguage } from "@finvoice/contracts";
 import {
   GoogleGenAI,
   Modality,
   VoiceActivityType,
+  type AudioTranscriptionConfig,
   type LiveConnectConfig,
   type LiveConnectParameters,
   type LiveServerMessage,
@@ -41,6 +42,19 @@ export type GeminiLiveSettings = {
   connectTimeoutMs?: number;
 };
 
+/**
+ * Language hints (BCP-47) for Gemini's input transcription. Without a hint, automatic detection
+ * often transcribed Sinhala speech as Hindi or Tamil. With "si-LK", a test with Gemini-spoken
+ * Sinhala questions got more words right, but some letters from other Indic scripts remained, so
+ * this improves the transcript but does not make it exact. The model itself hears the raw audio:
+ * the hint changes only the transcript. English keeps automatic detection.
+ */
+export const INPUT_TRANSCRIPTION_LANGUAGE_CODES: Record<AgentLanguage, readonly string[]> = {
+  SI: ["si-LK"],
+  TA: ["ta-LK"],
+  EN: [],
+};
+
 /** Gemini's output audio format; anything else is not forwarded to the browser. */
 const OUTPUT_AUDIO_MIME = /^audio\/pcm(;\s*rate=24000)?$/i;
 
@@ -50,7 +64,8 @@ const OUTPUT_AUDIO_MIME = /^audio\/pcm(;\s*rate=24000)?$/i;
  * - native audio output (`responseModalities: [AUDIO]`), no separate text-to-speech, spoken with
  *   the configured prebuilt voice;
  * - the FinVoice Live system instruction and the allowlisted FinVoice tools from the API;
- * - input and output transcription;
+ * - input and output transcription, with a language hint for input transcription (see
+ *   INPUT_TRANSCRIPTION_LANGUAGE_CODES);
  * - session resumption (with the latest handle when reconnecting);
  * - context window compression with a sliding window, so long conversations do not hit the
  *   context limit (server defaults for the token thresholds).
@@ -71,11 +86,16 @@ export function buildLiveConnectConfig(setup: LiveSessionSetup, voice: string): 
         })),
       },
     ],
-    inputAudioTranscription: {},
+    inputAudioTranscription: inputTranscriptionConfig(setup.language),
     outputAudioTranscription: {},
     sessionResumption: setup.resumptionHandle === null ? {} : { handle: setup.resumptionHandle },
     contextWindowCompression: { slidingWindow: {} },
   };
+}
+
+function inputTranscriptionConfig(language: AgentLanguage): AudioTranscriptionConfig {
+  const languageCodes = INPUT_TRANSCRIPTION_LANGUAGE_CODES[language];
+  return languageCodes.length === 0 ? {} : { languageCodes: [...languageCodes] };
 }
 
 /** Maps one Live server message to provider-neutral events, in the order they must be handled. */
